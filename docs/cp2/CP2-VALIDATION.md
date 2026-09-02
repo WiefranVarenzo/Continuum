@@ -41,10 +41,10 @@ The CP2 implementation was checked against CP1 Architecture Section 13, Domain M
 
 The CP1 reference machine was available exactly: AMD Ryzen 5 5600H, approximately 16 GB RAM, Linux x86_64. The `standard-core-metadata-v1` fixture used 50,000 entities, 150,000 relationships, and 100 hash-verified artifacts with five warmups and 30 measured samples.
 
-- warm project open p95: 0.483 ms (budget for warm usable overview: 3,000 ms);
-- entity write p95: 0.715 ms (budget: 150 ms);
-- existing Checkpoint load p95: 0.385 ms (budget: 1,000 ms);
-- integrity scan over 100 artifacts p95: 1,156.763 ms (CP2 baseline including foreign-key verification; no explicit interactive SLO).
+- warm project open p95: 0.480 ms (budget for warm usable overview: 3,000 ms);
+- entity write p95: 0.712 ms (budget: 150 ms);
+- existing Checkpoint load p95: 0.418 ms (budget: 1,000 ms);
+- integrity scan over 100 artifacts p95: 1,132.423 ms (CP2 baseline including foreign-key verification; no explicit interactive SLO).
 
 The CP12 5 GB artifact corpus, peak RSS/CPU/disk telemetry, cold desktop UI timing, and background-load responsiveness remain release-level evidence; they are not falsely claimed by CP2.
 

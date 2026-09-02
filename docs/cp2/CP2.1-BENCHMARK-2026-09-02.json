@@ -19,10 +19,10 @@
     "network_included": false
   },
   "milliseconds": {
-    "warm_project_open": { "p50": 0.433968, "p95": 0.482729, "max": 0.485295 },
-    "entity_write": { "p50": 0.656818, "p95": 0.714556, "max": 0.798655 },
-    "checkpoint_load": { "p50": 0.373754, "p95": 0.385407, "max": 0.40873 },
-    "integrity_scan_100_artifacts": { "p50": 1111.246076, "p95": 1156.763398, "max": 1180.999704 }
+    "warm_project_open": { "p50": 0.425712, "p95": 0.480135, "max": 0.485716 },
+    "entity_write": { "p50": 0.669432, "p95": 0.711962, "max": 0.718504 },
+    "checkpoint_load": { "p50": 0.367162, "p95": 0.418409, "max": 0.438887 },
+    "integrity_scan_100_artifacts": { "p50": 1101.835822, "p95": 1132.422786, "max": 1162.328526 }
   },
   "targets_ms": {
     "warm_project_overview": 3000,
