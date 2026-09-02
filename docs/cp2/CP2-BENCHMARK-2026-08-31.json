@@ -1,0 +1,32 @@
+{
+  "arch": "x86_64",
+  "benchmark_version": 1,
+  "build": "0.1.0",
+  "correctness": "all sampled operations completed; every integrity scan was healthy",
+  "cpu": "AMD Ryzen 5 5600H with Radeon Graphics",
+  "memory": "15745636 kB",
+  "os": "linux",
+  "fixture": {
+    "name": "standard-core-metadata-v1",
+    "entities": 50000,
+    "relationships": 150000,
+    "artifacts": 100,
+    "artifact_payload_note": "CP2 metadata/integrity harness; the CP12 5 GB payload corpus is deferred"
+  },
+  "protocol": {
+    "warmups": 5,
+    "samples": 30,
+    "network_included": false
+  },
+  "milliseconds": {
+    "warm_project_open": { "p50": 0.33423, "p95": 0.400995, "max": 0.421163 },
+    "entity_write": { "p50": 0.534887, "p95": 0.586915, "max": 0.618565 },
+    "checkpoint_load": { "p50": 0.311126, "p95": 0.324811, "max": 0.420772 },
+    "integrity_scan_100_artifacts": { "p50": 665.080938, "p95": 694.896119, "max": 696.789885 }
+  },
+  "targets_ms": {
+    "warm_project_overview": 3000,
+    "entity_write": 150,
+    "checkpoint_load": 1000
+  }
+}

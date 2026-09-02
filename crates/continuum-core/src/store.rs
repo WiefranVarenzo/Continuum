@@ -1,0 +1,2504 @@
+use std::collections::HashSet;
+use std::fs;
+use std::io::{Cursor, Read, Write};
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use chrono::{Duration as ChronoDuration, Utc};
+use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+
+use crate::artifact::{hash_file, relative_content_path};
+use crate::manifest::{LEDGER_FILE, MANIFEST_FILE, ProjectManifest};
+use crate::{
+    ActorKind, ActorRef, ArtifactAvailability, ArtifactClassification, ArtifactRecord, AuditEvent,
+    CORE_SCHEMA_VERSION, Checkpoint, CheckpointScope, CommandContext, CoreError,
+    CoreRelationshipPolicy, Entity, EntityPage, EntityUpdate, IntegrityIssue, IntegrityReport, Job,
+    NewEntity, NewRelationship, OriginKind, OutboxMessage, PageRequest, ProjectSummary,
+    Relationship, RelationshipPage, RelationshipPolicy, RelationshipReviewState, Result, Space,
+    new_id,
+};
+
+const MIGRATION_1: &str = include_str!("../migrations/0001_core.sql");
+const MIGRATION_2: &str = include_str!("../migrations/0002_contract_alignment.sql");
+const MAX_ACTIVE_JOBS: i64 = 1_000;
+const MAX_ENTITY_JSON_BYTES: usize = 1024 * 1024;
+const MAX_CHECKPOINT_JSON_BYTES: usize = 2 * 1024 * 1024;
+
+#[derive(Debug, Clone)]
+pub struct ContinuityStore {
+    root: PathBuf,
+    manifest: ProjectManifest,
+}
+
+impl ContinuityStore {
+    pub fn create(root: impl AsRef<Path>, name: impl Into<String>) -> Result<Self> {
+        Self::create_with_actor(root, name, ActorRef::system("continuum-core"))
+    }
+
+    pub fn create_with_actor(
+        root: impl AsRef<Path>,
+        name: impl Into<String>,
+        actor: ActorRef,
+    ) -> Result<Self> {
+        let root = root.as_ref();
+        let name = name.into().trim().to_owned();
+        if name.is_empty() || name.chars().count() > 200 {
+            return Err(CoreError::Validation(
+                "project name must contain 1..=200 characters".into(),
+            ));
+        }
+        if root.join(MANIFEST_FILE).exists() || root.join(LEDGER_FILE).exists() {
+            return Err(CoreError::Conflict(format!(
+                "project already exists at {}",
+                root.display()
+            )));
+        }
+
+        fs::create_dir_all(root)?;
+        for directory in [
+            "artifacts/sha256",
+            "staging",
+            "quarantine",
+            "backups",
+            "derived",
+        ] {
+            fs::create_dir_all(root.join(directory))?;
+        }
+
+        let project_id = new_id();
+        let manifest = ProjectManifest::new(project_id.clone(), name.clone());
+        manifest.write_atomic(root)?;
+
+        let mut connection = open_connection(&manifest.ledger_path(root))?;
+        apply_migrations(&mut connection)?;
+        let now = Utc::now().to_rfc3339();
+        let command = CommandContext::new(actor);
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        tx.execute(
+            "INSERT INTO projects(id,name,status,lifecycle_version,ledger_sequence,created_at,updated_at)
+             VALUES(?1,?2,'active',1,0,?3,?3)",
+            params![project_id, name, now],
+        )?;
+        tx.execute(
+            "INSERT INTO space_capabilities(project_id,space,enabled,updated_at)
+             VALUES(?1,'research',0,?2), (?1,'development',0,?2)",
+            params![manifest.project_id, now],
+        )?;
+        append_event_with_context(
+            &tx,
+            &manifest.project_id,
+            &command,
+            Some(&manifest.project_id),
+            "project.created",
+            &json!({"name": manifest.name}),
+        )?;
+        record_command_with_context(
+            &tx,
+            &command,
+            &manifest.project_id,
+            "CreateProject",
+            Some(&manifest.project_id),
+            None,
+            &json!({"name": manifest.name}),
+        )?;
+        tx.commit()?;
+
+        Ok(Self {
+            root: root.to_path_buf(),
+            manifest,
+        })
+    }
+
+    pub fn open(root: impl AsRef<Path>) -> Result<Self> {
+        let root = root.as_ref();
+        let manifest = ProjectManifest::load(root)?;
+        let ledger_path = manifest.ledger_path(root);
+        if !ledger_path.is_file() {
+            return Err(CoreError::NotFound(format!(
+                "project ledger is missing: {}",
+                ledger_path.display()
+            )));
+        }
+        let mut connection = open_connection(&ledger_path)?;
+        let current_version = current_schema_version(&connection)?;
+        if current_version < CORE_SCHEMA_VERSION {
+            let backup_path = root.join("backups").join(format!(
+                "pre-migration-v{current_version}-to-v{CORE_SCHEMA_VERSION}-{}.sqlite3",
+                Utc::now().timestamp_millis()
+            ));
+            backup_connection(&connection, &backup_path)?;
+        }
+        apply_migrations(&mut connection)?;
+        let exists: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM projects WHERE id=?1)",
+            [&manifest.project_id],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            return Err(CoreError::Validation(
+                "manifest project_id does not exist in ledger".into(),
+            ));
+        }
+        Ok(Self {
+            root: root.to_path_buf(),
+            manifest,
+        })
+    }
+
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    pub fn manifest(&self) -> &ProjectManifest {
+        &self.manifest
+    }
+
+    pub fn summary(&self) -> Result<ProjectSummary> {
+        let connection = self.connection()?;
+        connection
+            .query_row(
+                "SELECT id,name,status,ledger_sequence FROM projects WHERE id=?1",
+                [&self.manifest.project_id],
+                |row| {
+                    Ok(ProjectSummary {
+                        project_id: row.get(0)?,
+                        name: row.get(1)?,
+                        status: row.get(2)?,
+                        ledger_sequence: row.get(3)?,
+                    })
+                },
+            )
+            .map_err(Into::into)
+    }
+
+    pub fn set_project_archived(&self, command_id: &str, archived: bool) -> Result<()> {
+        self.set_project_archived_with_context(
+            &CommandContext::system_with_id(command_id),
+            archived,
+        )
+    }
+
+    pub fn set_project_archived_with_context(
+        &self,
+        command: &CommandContext,
+        archived: bool,
+    ) -> Result<()> {
+        validate_command_context(command)?;
+        let mut connection = self.connection()?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if prior_result(
+            &tx,
+            &self.manifest.project_id,
+            command,
+            "SetProjectArchived",
+        )?
+        .is_some()
+        {
+            return tx.commit().map_err(Into::into);
+        }
+        let status = if archived { "archived" } else { "active" };
+        tx.execute(
+            "UPDATE projects SET status=?2,lifecycle_version=lifecycle_version+1,updated_at=?3 WHERE id=?1",
+            params![self.manifest.project_id, status, Utc::now().to_rfc3339()],
+        )?;
+        append_event_with_context(
+            &tx,
+            &self.manifest.project_id,
+            command,
+            Some(&self.manifest.project_id),
+            "project.lifecycle_changed",
+            &json!({"status": status}),
+        )?;
+        record_command_with_context(
+            &tx,
+            command,
+            &self.manifest.project_id,
+            "SetProjectArchived",
+            None,
+            None,
+            &json!({"archived": archived}),
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn capability_enabled(&self, space: Space) -> Result<bool> {
+        let connection = self.connection()?;
+        connection
+            .query_row(
+                "SELECT enabled FROM space_capabilities WHERE project_id=?1 AND space=?2",
+                params![self.manifest.project_id, space.as_str()],
+                |row| row.get(0),
+            )
+            .map_err(Into::into)
+    }
+
+    pub fn set_space_capability(
+        &self,
+        command_id: &str,
+        space: Space,
+        enabled: bool,
+    ) -> Result<()> {
+        self.set_space_capability_with_context(
+            &CommandContext::system_with_id(command_id),
+            space,
+            enabled,
+        )
+    }
+
+    pub fn set_space_capability_with_context(
+        &self,
+        command: &CommandContext,
+        space: Space,
+        enabled: bool,
+    ) -> Result<()> {
+        validate_command_context(command)?;
+        let mut connection = self.connection()?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if prior_result(
+            &tx,
+            &self.manifest.project_id,
+            command,
+            "SetSpaceCapability",
+        )?
+        .is_some()
+        {
+            return tx.commit().map_err(Into::into);
+        }
+        let now = Utc::now().to_rfc3339();
+        tx.execute(
+            "UPDATE space_capabilities SET enabled=?3,updated_at=?4
+             WHERE project_id=?1 AND space=?2",
+            params![self.manifest.project_id, space.as_str(), enabled, now],
+        )?;
+        append_event_with_context(
+            &tx,
+            &self.manifest.project_id,
+            command,
+            Some(&self.manifest.project_id),
+            "space.capability_changed",
+            &json!({"space": space.as_str(), "enabled": enabled}),
+        )?;
+        record_command_with_context(
+            &tx,
+            command,
+            &self.manifest.project_id,
+            "SetSpaceCapability",
+            None,
+            None,
+            &json!({"space": space.as_str(), "enabled": enabled}),
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn create_entity(&self, command_id: &str, input: NewEntity) -> Result<String> {
+        self.create_entity_with_context(&CommandContext::system_with_id(command_id), input)
+    }
+
+    pub fn create_entity_with_context(
+        &self,
+        command: &CommandContext,
+        input: NewEntity,
+    ) -> Result<String> {
+        validate_command_context(command)?;
+        validate_nonempty(&input.entity_type, 100, "entity_type")?;
+        validate_nonempty(&input.title, 500, "title")?;
+        if input.schema_version == 0 {
+            return Err(CoreError::Validation(
+                "entity schema_version must be positive".into(),
+            ));
+        }
+        if input.origin == OriginKind::AiProposal {
+            return Err(CoreError::Validation(
+                "AI proposal origin belongs in candidate storage, not canonical entities".into(),
+            ));
+        }
+        let metadata_json =
+            bounded_json(&input.metadata, MAX_ENTITY_JSON_BYTES, "entity metadata")?;
+        let data_json = bounded_json(&input.data, MAX_ENTITY_JSON_BYTES, "entity data")?;
+        let mut connection = self.connection()?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if let Some(result) = prior_result(&tx, &self.manifest.project_id, command, "CreateEntity")?
+        {
+            return result.ok_or_else(|| CoreError::Conflict("command has no result ID".into()));
+        }
+        let id = new_id();
+        let now = Utc::now().to_rfc3339();
+        tx.execute(
+            "INSERT INTO entities(
+                id,project_id,entity_type,title,status,version,legacy_origin,data_json,created_at,updated_at,
+                entity_schema_version,origin_type,metadata_json,created_by,updated_by
+             ) VALUES(?1,?2,?3,?4,'active',1,?5,?6,?7,?7,?8,?9,?10,?11,?11)",
+            params![
+                id,
+                self.manifest.project_id,
+                input.entity_type,
+                input.title,
+                legacy_origin(input.origin),
+                data_json,
+                now,
+                input.schema_version,
+                input.origin.as_str(),
+                metadata_json,
+                command.actor.id
+            ],
+        )?;
+        append_event_with_context(
+            &tx,
+            &self.manifest.project_id,
+            command,
+            Some(&id),
+            "entity.created",
+            &json!({"entity_id": id, "entity_type": input.entity_type}),
+        )?;
+        record_command_with_context(
+            &tx,
+            command,
+            &self.manifest.project_id,
+            "CreateEntity",
+            Some(&id),
+            None,
+            &json!({"entity_type": input.entity_type, "schema_version": input.schema_version}),
+        )?;
+        tx.commit()?;
+        Ok(id)
+    }
+
+    pub fn get_entity(&self, id: &str) -> Result<Entity> {
+        let connection = self.connection()?;
+        let raw = connection
+            .query_row(
+                "SELECT id,project_id,entity_type,entity_schema_version,title,status,version,origin_type,
+                        metadata_json,data_json,created_at,created_by,updated_at,updated_by,archived_at
+                 FROM entities WHERE id=?1 AND project_id=?2",
+                params![id, self.manifest.project_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, String>(5)?,
+                        row.get::<_, i64>(6)?,
+                        row.get::<_, String>(7)?,
+                        row.get::<_, String>(8)?,
+                        row.get::<_, String>(9)?,
+                        row.get::<_, String>(10)?,
+                        row.get::<_, String>(11)?,
+                        row.get::<_, String>(12)?,
+                        row.get::<_, String>(13)?,
+                        row.get::<_, Option<String>>(14)?,
+                    ))
+                },
+            )
+            .optional()?
+            .ok_or_else(|| CoreError::NotFound(id.into()))?;
+        Ok(Entity {
+            id: raw.0,
+            project_id: raw.1,
+            entity_type: raw.2,
+            schema_version: raw.3,
+            title: raw.4,
+            status: raw.5,
+            version: raw.6,
+            origin: raw.7,
+            metadata: serde_json::from_str(&raw.8)?,
+            data: serde_json::from_str(&raw.9)?,
+            created_at: raw.10,
+            created_by: raw.11,
+            updated_at: raw.12,
+            updated_by: raw.13,
+            archived_at: raw.14,
+        })
+    }
+
+    pub fn list_entities(&self, page: PageRequest) -> Result<EntityPage> {
+        if page.limit == 0 || page.limit > 100 {
+            return Err(CoreError::Validation(
+                "entity page limit must be within 1..=100".into(),
+            ));
+        }
+        let offset = i64::try_from(page.offset)
+            .map_err(|_| CoreError::Validation("entity page offset is too large".into()))?;
+        let connection = self.connection()?;
+        let mut statement = connection.prepare(
+            "SELECT id FROM entities WHERE project_id=?1 ORDER BY created_at,id LIMIT ?2 OFFSET ?3",
+        )?;
+        let ids = statement
+            .query_map(
+                params![self.manifest.project_id, page.limit + 1, offset],
+                |row| row.get::<_, String>(0),
+            )?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let has_more = ids.len() > page.limit as usize;
+        let items = ids
+            .into_iter()
+            .take(page.limit as usize)
+            .map(|id| self.get_entity(&id))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(EntityPage {
+            next_offset: has_more.then_some(page.offset + items.len() as u64),
+            items,
+        })
+    }
+
+    pub fn update_entity(
+        &self,
+        command_id: &str,
+        entity_id: &str,
+        update: EntityUpdate,
+    ) -> Result<Entity> {
+        self.update_entity_with_context(
+            &CommandContext::system_with_id(command_id),
+            entity_id,
+            update,
+        )
+    }
+
+    pub fn update_entity_with_context(
+        &self,
+        command: &CommandContext,
+        entity_id: &str,
+        update: EntityUpdate,
+    ) -> Result<Entity> {
+        validate_command_context(command)?;
+        validate_nonempty(&update.title, 500, "title")?;
+        validate_nonempty(&update.status, 50, "status")?;
+        let metadata_json =
+            bounded_json(&update.metadata, MAX_ENTITY_JSON_BYTES, "entity metadata")?;
+        let data_json = bounded_json(&update.data, MAX_ENTITY_JSON_BYTES, "entity data")?;
+        let mut connection = self.connection()?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if prior_result(&tx, &self.manifest.project_id, command, "UpdateEntity")?.is_some() {
+            tx.commit()?;
+            return self.get_entity(entity_id);
+        }
+        let now = Utc::now().to_rfc3339();
+        let changed = tx.execute(
+            "UPDATE entities SET title=?3,status=?4,metadata_json=?5,data_json=?6,
+                    version=version+1,updated_at=?7,updated_by=?8,
+                    archived_at=CASE WHEN ?4='archived' THEN ?7 ELSE NULL END
+             WHERE id=?1 AND project_id=?2 AND version=?9",
+            params![
+                entity_id,
+                self.manifest.project_id,
+                update.title,
+                update.status,
+                metadata_json,
+                data_json,
+                now,
+                command.actor.id,
+                update.expected_version
+            ],
+        )?;
+        if changed != 1 {
+            return Err(CoreError::Conflict(format!(
+                "entity {entity_id} was missing or version {} is stale",
+                update.expected_version
+            )));
+        }
+        append_event_with_context(
+            &tx,
+            &self.manifest.project_id,
+            command,
+            Some(entity_id),
+            "entity.updated",
+            &json!({"entity_id": entity_id, "previous_version": update.expected_version}),
+        )?;
+        record_command_with_context(
+            &tx,
+            command,
+            &self.manifest.project_id,
+            "UpdateEntity",
+            Some(entity_id),
+            Some(update.expected_version),
+            &json!({"entity_id": entity_id, "status": update.status}),
+        )?;
+        tx.commit()?;
+        self.get_entity(entity_id)
+    }
+
+    pub fn archive_entity(
+        &self,
+        command_id: &str,
+        entity_id: &str,
+        expected_version: i64,
+    ) -> Result<Entity> {
+        self.archive_entity_with_context(
+            &CommandContext::system_with_id(command_id),
+            entity_id,
+            expected_version,
+        )
+    }
+
+    pub fn archive_entity_with_context(
+        &self,
+        command: &CommandContext,
+        entity_id: &str,
+        expected_version: i64,
+    ) -> Result<Entity> {
+        let current = self.get_entity(entity_id)?;
+        self.update_entity_with_context(
+            command,
+            entity_id,
+            EntityUpdate {
+                title: current.title,
+                status: "archived".into(),
+                metadata: current.metadata,
+                data: current.data,
+                expected_version,
+            },
+        )
+    }
+
+    pub fn create_relationship(
+        &self,
+        command_id: &str,
+        relation_type: &str,
+        source_entity_id: &str,
+        target_entity_id: &str,
+        origin: OriginKind,
+    ) -> Result<String> {
+        self.create_relationship_with_context(
+            &CommandContext::system_with_id(command_id),
+            NewRelationship {
+                relation_type: relation_type.into(),
+                relation_version: 1,
+                source_entity_id: source_entity_id.into(),
+                target_entity_id: target_entity_id.into(),
+                origin,
+                confidence: None,
+                review_state: RelationshipReviewState::Unreviewed,
+                direct_source_ids: Vec::new(),
+                supersedes_id: None,
+            },
+        )
+    }
+
+    pub fn create_relationship_with_context(
+        &self,
+        command: &CommandContext,
+        input: NewRelationship,
+    ) -> Result<String> {
+        self.create_relationship_with_policy(command, input, &CoreRelationshipPolicy)
+    }
+
+    pub fn create_relationship_with_policy(
+        &self,
+        command: &CommandContext,
+        input: NewRelationship,
+        policy: &dyn RelationshipPolicy,
+    ) -> Result<String> {
+        validate_command_context(command)?;
+        validate_nonempty(&input.relation_type, 100, "relation_type")?;
+        if input.relation_version == 0 {
+            return Err(CoreError::Validation(
+                "relation_version must be positive".into(),
+            ));
+        }
+        if input.origin == OriginKind::AiProposal {
+            return Err(CoreError::Validation(
+                "AI proposal origin belongs in candidate storage, not canonical relationships"
+                    .into(),
+            ));
+        }
+        if input
+            .confidence
+            .is_some_and(|value| !(0.0..=1.0).contains(&value))
+        {
+            return Err(CoreError::Validation(
+                "relationship confidence must be within 0.0..=1.0".into(),
+            ));
+        }
+        if input.source_entity_id == input.target_entity_id
+            && input.relation_type != "contextualizes"
+        {
+            return Err(CoreError::Validation(
+                "self-relationship is not allowed for this relation family".into(),
+            ));
+        }
+        let mut connection = self.connection()?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if let Some(result) = prior_result(
+            &tx,
+            &self.manifest.project_id,
+            command,
+            "CreateRelationship",
+        )? {
+            return result.ok_or_else(|| CoreError::Conflict("command has no result ID".into()));
+        }
+        let source_type =
+            entity_type_in_project(&tx, &self.manifest.project_id, &input.source_entity_id)?;
+        let target_type =
+            entity_type_in_project(&tx, &self.manifest.project_id, &input.target_entity_id)?;
+        policy
+            .validate_pair(&source_type, &input.relation_type, &target_type)
+            .map_err(CoreError::Validation)?;
+        for source_id in &input.direct_source_ids {
+            entity_type_in_project(&tx, &self.manifest.project_id, source_id)?;
+        }
+        if let Some(supersedes_id) = &input.supersedes_id {
+            let prior_type: Option<String> = tx
+                .query_row(
+                    "SELECT relation_type FROM relationships WHERE id=?1 AND project_id=?2",
+                    params![supersedes_id, self.manifest.project_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if prior_type.as_deref() != Some(input.relation_type.as_str()) {
+                return Err(CoreError::Validation(
+                    "superseded relationship must exist in this project and use the same type"
+                        .into(),
+                ));
+            }
+        }
+        let id = new_id();
+        let now = Utc::now().to_rfc3339();
+        let direct_source_ids_json = bounded_json(
+            &serde_json::to_value(&input.direct_source_ids)?,
+            MAX_ENTITY_JSON_BYTES,
+            "relationship direct sources",
+        )?;
+        tx.execute(
+            "INSERT INTO relationships(
+                id,project_id,relation_type,relation_version,source_entity_id,source_entity_type,
+                target_entity_id,target_entity_type,status,origin_type,actor_id,confidence,
+                review_state,direct_source_ids_json,supersedes_id,created_at,updated_at
+             ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,'active',?9,?10,?11,?12,?13,?14,?15,?15)",
+            params![
+                id,
+                self.manifest.project_id,
+                input.relation_type,
+                input.relation_version,
+                input.source_entity_id,
+                source_type,
+                input.target_entity_id,
+                target_type,
+                input.origin.as_str(),
+                command.actor.id,
+                input.confidence,
+                input.review_state.as_str(),
+                direct_source_ids_json,
+                input.supersedes_id,
+                now
+            ],
+        )?;
+        if let Some(supersedes_id) = &input.supersedes_id {
+            tx.execute(
+                "UPDATE relationships SET status='superseded',updated_at=?3
+                 WHERE id=?1 AND project_id=?2",
+                params![supersedes_id, self.manifest.project_id, now],
+            )?;
+        }
+        append_event_with_context(
+            &tx,
+            &self.manifest.project_id,
+            command,
+            Some(&id),
+            "relationship.created",
+            &json!({"relationship_id": id, "type": input.relation_type, "source": input.source_entity_id, "target": input.target_entity_id}),
+        )?;
+        record_command_with_context(
+            &tx,
+            command,
+            &self.manifest.project_id,
+            "CreateRelationship",
+            Some(&id),
+            None,
+            &json!({"relation_type": input.relation_type, "relation_version": input.relation_version}),
+        )?;
+        tx.commit()?;
+        Ok(id)
+    }
+
+    pub fn get_relationship(&self, id: &str) -> Result<Relationship> {
+        let connection = self.connection()?;
+        connection
+            .query_row(
+                "SELECT id,project_id,relation_type,relation_version,source_entity_id,source_entity_type,
+                        target_entity_id,target_entity_type,status,origin_type,actor_id,confidence,
+                        review_state,direct_source_ids_json,supersedes_id,created_at,updated_at
+                 FROM relationships WHERE id=?1 AND project_id=?2",
+                params![id, self.manifest.project_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, String>(5)?,
+                        row.get::<_, String>(6)?,
+                        row.get::<_, String>(7)?,
+                        row.get::<_, String>(8)?,
+                        row.get::<_, String>(9)?,
+                        row.get::<_, String>(10)?,
+                        row.get::<_, Option<f64>>(11)?,
+                        row.get::<_, String>(12)?,
+                        row.get::<_, String>(13)?,
+                        row.get::<_, Option<String>>(14)?,
+                        row.get::<_, String>(15)?,
+                        row.get::<_, String>(16)?,
+                    ))
+                },
+            )
+            .optional()?
+            .ok_or_else(|| CoreError::NotFound(id.into()))
+            .and_then(|raw| {
+                Ok(Relationship {
+                    id: raw.0,
+                    project_id: raw.1,
+                    relation_type: raw.2,
+                    relation_version: raw.3,
+                    source_entity_id: raw.4,
+                    source_entity_type: raw.5,
+                    target_entity_id: raw.6,
+                    target_entity_type: raw.7,
+                    status: raw.8,
+                    origin: raw.9,
+                    actor_id: raw.10,
+                    confidence: raw.11,
+                    review_state: raw.12,
+                    direct_source_ids: serde_json::from_str(&raw.13)?,
+                    supersedes_id: raw.14,
+                    created_at: raw.15,
+                    updated_at: raw.16,
+                })
+            })
+    }
+
+    pub fn list_relationships_for_entity(
+        &self,
+        entity_id: &str,
+        page: PageRequest,
+    ) -> Result<RelationshipPage> {
+        if page.limit == 0 || page.limit > 100 {
+            return Err(CoreError::Validation(
+                "relationship page limit must be within 1..=100".into(),
+            ));
+        }
+        self.get_entity(entity_id)?;
+        let offset = i64::try_from(page.offset)
+            .map_err(|_| CoreError::Validation("relationship page offset is too large".into()))?;
+        let connection = self.connection()?;
+        let mut statement = connection.prepare(
+            "SELECT id FROM relationships
+             WHERE project_id=?1 AND (source_entity_id=?2 OR target_entity_id=?2)
+             ORDER BY created_at,id LIMIT ?3 OFFSET ?4",
+        )?;
+        let ids = statement
+            .query_map(
+                params![self.manifest.project_id, entity_id, page.limit + 1, offset],
+                |row| row.get::<_, String>(0),
+            )?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let has_more = ids.len() > page.limit as usize;
+        let items = ids
+            .into_iter()
+            .take(page.limit as usize)
+            .map(|id| self.get_relationship(&id))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(RelationshipPage {
+            next_offset: has_more.then_some(page.offset + items.len() as u64),
+            items,
+        })
+    }
+
+    pub fn ingest_artifact(
+        &self,
+        command_id: &str,
+        bytes: &[u8],
+        media_type: &str,
+    ) -> Result<ArtifactRecord> {
+        self.ingest_artifact_reader_with_context(
+            &CommandContext::system_with_id(command_id),
+            Cursor::new(bytes),
+            media_type,
+            ArtifactClassification::Internal,
+            OriginKind::Deterministic,
+            &json!({}),
+        )
+    }
+
+    pub fn ingest_artifact_file(
+        &self,
+        command_id: &str,
+        source: impl AsRef<Path>,
+        media_type: &str,
+    ) -> Result<ArtifactRecord> {
+        let source = source.as_ref();
+        if fs::symlink_metadata(source)?.file_type().is_symlink() {
+            return Err(CoreError::Validation(
+                "artifact source must not be a symbolic link".into(),
+            ));
+        }
+        self.ingest_artifact_reader_with_context(
+            &CommandContext::system_with_id(command_id),
+            fs::File::open(source)?,
+            media_type,
+            ArtifactClassification::Internal,
+            OriginKind::Import,
+            &json!({"source_kind": "file"}),
+        )
+    }
+
+    pub fn ingest_artifact_reader(
+        &self,
+        command_id: &str,
+        reader: impl Read,
+        media_type: &str,
+    ) -> Result<ArtifactRecord> {
+        self.ingest_artifact_reader_with_context(
+            &CommandContext::system_with_id(command_id),
+            reader,
+            media_type,
+            ArtifactClassification::Internal,
+            OriginKind::Deterministic,
+            &json!({}),
+        )
+    }
+
+    pub fn ingest_artifact_reader_with_context(
+        &self,
+        command: &CommandContext,
+        mut reader: impl Read,
+        media_type: &str,
+        classification: ArtifactClassification,
+        origin: OriginKind,
+        metadata: &Value,
+    ) -> Result<ArtifactRecord> {
+        validate_command_context(command)?;
+        validate_nonempty(media_type, 200, "media_type")?;
+        if origin == OriginKind::AiProposal {
+            return Err(CoreError::Validation(
+                "AI proposal payloads require the generated-artifact candidate workflow".into(),
+            ));
+        }
+        let metadata_json = bounded_json(metadata, MAX_ENTITY_JSON_BYTES, "artifact metadata")?;
+        let staging_path = self.root.join("staging").join(format!("{}.part", new_id()));
+        let mut options = fs::OpenOptions::new();
+        options.create_new(true).write(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut staging = options.open(&staging_path)?;
+        let mut digest = Sha256::new();
+        let mut staged_size = 0_u64;
+        let mut buffer = [0_u8; 64 * 1024];
+        loop {
+            let read = reader.read(&mut buffer)?;
+            if read == 0 {
+                break;
+            }
+            digest.update(&buffer[..read]);
+            staging.write_all(&buffer[..read])?;
+            staged_size = staged_size
+                .checked_add(read as u64)
+                .ok_or_else(|| CoreError::Validation("artifact size overflow".into()))?;
+        }
+        staging.sync_all()?;
+        drop(staging);
+        let hash = hex::encode(digest.finalize());
+        let (verified_hash, verified_size) = hash_file(&staging_path)?;
+        if verified_hash != hash || verified_size != staged_size {
+            let quarantine = self.root.join("quarantine").join(
+                staging_path
+                    .file_name()
+                    .expect("staging filename is present"),
+            );
+            fs::rename(&staging_path, &quarantine)?;
+            return Err(CoreError::ArtifactIntegrity {
+                path: quarantine,
+                reason: "staged bytes changed before finalization".into(),
+            });
+        }
+        let relative = relative_content_path(&hash)?;
+        let final_path = self.root.join(&relative);
+        fs::create_dir_all(final_path.parent().expect("content path has parent"))?;
+        if final_path.exists() {
+            let (existing_hash, existing_size) = hash_file(&final_path)?;
+            if existing_hash != hash || existing_size != staged_size {
+                return Err(CoreError::ArtifactIntegrity {
+                    path: final_path,
+                    reason: "content-addressed destination has unexpected bytes".into(),
+                });
+            }
+            fs::remove_file(&staging_path)?;
+        } else {
+            fs::rename(&staging_path, &final_path)?;
+        }
+
+        let mut connection = self.connection()?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if let Some(Some(result_id)) =
+            prior_result(&tx, &self.manifest.project_id, command, "FinalizeArtifact")?
+        {
+            tx.commit()?;
+            return self.get_artifact(&result_id);
+        }
+        let existing: Option<(String, String)> = tx
+            .query_row(
+                "SELECT id,classification FROM artifacts WHERE project_id=?1 AND sha256=?2",
+                params![self.manifest.project_id, hash],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        let id = existing
+            .as_ref()
+            .map(|value| value.0.clone())
+            .unwrap_or_else(new_id);
+        let now = Utc::now().to_rfc3339();
+        tx.execute(
+            "INSERT OR IGNORE INTO artifacts(
+                id,project_id,sha256,byte_size,media_type,relative_path,created_at,
+                classification,availability,origin_type,metadata_json,created_by,updated_at
+             ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,'available',?9,?10,?11,?7)",
+            params![
+                id,
+                self.manifest.project_id,
+                hash,
+                staged_size as i64,
+                media_type,
+                path_to_slashes(&relative),
+                now,
+                classification.as_str(),
+                origin.as_str(),
+                metadata_json,
+                command.actor.id
+            ],
+        )?;
+        if let Some((_, existing_classification)) = existing {
+            let effective =
+                more_restrictive_classification(&existing_classification, classification.as_str());
+            tx.execute(
+                "UPDATE artifacts SET classification=?2,availability='available',unavailable_reason=NULL,updated_at=?3
+                 WHERE id=?1",
+                params![id, effective, now],
+            )?;
+        }
+        append_event_with_context(
+            &tx,
+            &self.manifest.project_id,
+            command,
+            Some(&id),
+            "artifact.finalized",
+            &json!({"artifact_id": id, "sha256": hash, "byte_size": staged_size, "classification": classification.as_str()}),
+        )?;
+        record_command_with_context(
+            &tx,
+            command,
+            &self.manifest.project_id,
+            "FinalizeArtifact",
+            Some(&id),
+            None,
+            &json!({"media_type": media_type, "classification": classification.as_str()}),
+        )?;
+        tx.commit()?;
+        self.get_artifact(&id)
+    }
+
+    pub fn get_artifact(&self, id: &str) -> Result<ArtifactRecord> {
+        let connection = self.connection()?;
+        let raw = connection
+            .query_row(
+                "SELECT id,project_id,sha256,byte_size,media_type,relative_path,classification,
+                        availability,origin_type,metadata_json,unavailable_reason,created_at,created_by,updated_at
+                 FROM artifacts WHERE id=?1 AND project_id=?2",
+                params![id, self.manifest.project_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, String>(5)?,
+                        row.get::<_, String>(6)?,
+                        row.get::<_, String>(7)?,
+                        row.get::<_, String>(8)?,
+                        row.get::<_, String>(9)?,
+                        row.get::<_, Option<String>>(10)?,
+                        row.get::<_, String>(11)?,
+                        row.get::<_, String>(12)?,
+                        row.get::<_, String>(13)?,
+                    ))
+                },
+            )
+            .optional()?
+            .ok_or_else(|| CoreError::NotFound(id.into()))?;
+        Ok(ArtifactRecord {
+            id: raw.0,
+            project_id: raw.1,
+            sha256: raw.2,
+            byte_size: raw.3,
+            media_type: raw.4,
+            relative_path: raw.5,
+            classification: raw.6,
+            availability: raw.7,
+            origin: raw.8,
+            metadata: serde_json::from_str(&raw.9)?,
+            unavailable_reason: raw.10,
+            created_at: raw.11,
+            created_by: raw.12,
+            updated_at: raw.13,
+        })
+    }
+
+    pub fn set_artifact_classification(
+        &self,
+        command: &CommandContext,
+        artifact_id: &str,
+        classification: ArtifactClassification,
+        reason: &str,
+    ) -> Result<ArtifactRecord> {
+        validate_command_context(command)?;
+        validate_nonempty(reason, 1_000, "classification change reason")?;
+        let mut connection = self.connection()?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if prior_result(
+            &tx,
+            &self.manifest.project_id,
+            command,
+            "SetArtifactClassification",
+        )?
+        .is_some()
+        {
+            tx.commit()?;
+            return self.get_artifact(artifact_id);
+        }
+        let changed = tx.execute(
+            "UPDATE artifacts SET classification=?3,updated_at=?4 WHERE id=?1 AND project_id=?2",
+            params![
+                artifact_id,
+                self.manifest.project_id,
+                classification.as_str(),
+                Utc::now().to_rfc3339()
+            ],
+        )?;
+        if changed != 1 {
+            return Err(CoreError::NotFound(artifact_id.into()));
+        }
+        append_event_with_context(
+            &tx,
+            &self.manifest.project_id,
+            command,
+            Some(artifact_id),
+            "artifact.classification_changed",
+            &json!({"artifact_id": artifact_id, "classification": classification.as_str(), "reason": truncate(reason, 200)}),
+        )?;
+        record_command_with_context(
+            &tx,
+            command,
+            &self.manifest.project_id,
+            "SetArtifactClassification",
+            Some(artifact_id),
+            None,
+            &json!({"classification": classification.as_str(), "reason": truncate(reason, 200)}),
+        )?;
+        tx.commit()?;
+        self.get_artifact(artifact_id)
+    }
+
+    pub fn mark_artifact_unavailable(
+        &self,
+        command: &CommandContext,
+        artifact_id: &str,
+        reason: &str,
+    ) -> Result<ArtifactRecord> {
+        validate_command_context(command)?;
+        validate_nonempty(reason, 2_000, "unavailable reason")?;
+        let mut connection = self.connection()?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if prior_result(
+            &tx,
+            &self.manifest.project_id,
+            command,
+            "MarkArtifactUnavailable",
+        )?
+        .is_some()
+        {
+            tx.commit()?;
+            return self.get_artifact(artifact_id);
+        }
+        let changed = tx.execute(
+            "UPDATE artifacts SET availability='unavailable',unavailable_reason=?3,updated_at=?4
+             WHERE id=?1 AND project_id=?2",
+            params![
+                artifact_id,
+                self.manifest.project_id,
+                truncate(reason, 2_000),
+                Utc::now().to_rfc3339()
+            ],
+        )?;
+        if changed != 1 {
+            return Err(CoreError::NotFound(artifact_id.into()));
+        }
+        append_event_with_context(
+            &tx,
+            &self.manifest.project_id,
+            command,
+            Some(artifact_id),
+            "artifact.unavailable",
+            &json!({"artifact_id": artifact_id, "reason": truncate(reason, 200)}),
+        )?;
+        record_command_with_context(
+            &tx,
+            command,
+            &self.manifest.project_id,
+            "MarkArtifactUnavailable",
+            Some(artifact_id),
+            None,
+            &json!({"reason_code": "declared_unavailable"}),
+        )?;
+        tx.commit()?;
+        self.get_artifact(artifact_id)
+    }
+
+    pub fn purge_artifact_payload(
+        &self,
+        command: &CommandContext,
+        artifact_id: &str,
+    ) -> Result<ArtifactRecord> {
+        validate_command_context(command)?;
+        let artifact = self.get_artifact(artifact_id)?;
+        let expected_relative = relative_content_path(&artifact.sha256)?;
+        if path_to_slashes(&expected_relative) != artifact.relative_path {
+            return Err(CoreError::ArtifactIntegrity {
+                path: self.root.join(&artifact.relative_path),
+                reason: "artifact metadata path does not match its hash".into(),
+            });
+        }
+        let payload = self.root.join(&expected_relative);
+        let quarantined =
+            self.root
+                .join("quarantine")
+                .join(format!("purge-{}-{}", artifact.sha256, new_id()));
+
+        let mut connection = self.connection()?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if prior_result(
+            &tx,
+            &self.manifest.project_id,
+            command,
+            "PurgeArtifactPayload",
+        )?
+        .is_some()
+        {
+            tx.commit()?;
+            if payload.exists() {
+                fs::remove_file(&payload)?;
+            }
+            return self.get_artifact(artifact_id);
+        }
+        if payload.exists() {
+            fs::rename(&payload, &quarantined)?;
+        }
+        let transaction_result = (|| -> Result<()> {
+            tx.execute(
+                "UPDATE artifacts SET availability='purged_payload',unavailable_reason='explicit purge',updated_at=?3
+                 WHERE id=?1 AND project_id=?2",
+                params![artifact_id, self.manifest.project_id, Utc::now().to_rfc3339()],
+            )?;
+            append_event_with_context(
+                &tx,
+                &self.manifest.project_id,
+                command,
+                Some(artifact_id),
+                "artifact.payload_purged",
+                &json!({"artifact_id": artifact_id, "sha256": artifact.sha256}),
+            )?;
+            record_command_with_context(
+                &tx,
+                command,
+                &self.manifest.project_id,
+                "PurgeArtifactPayload",
+                Some(artifact_id),
+                None,
+                &json!({"artifact_id": artifact_id}),
+            )?;
+            tx.commit()?;
+            Ok(())
+        })();
+        if let Err(error) = transaction_result {
+            if quarantined.exists() && !payload.exists() {
+                let _ = fs::rename(&quarantined, &payload);
+            }
+            return Err(error);
+        }
+        if quarantined.exists() {
+            fs::remove_file(quarantined)?;
+        }
+        self.get_artifact(artifact_id)
+    }
+
+    pub fn link_artifact_to_entity(
+        &self,
+        command_id: &str,
+        entity_id: &str,
+        artifact_id: &str,
+        role: &str,
+    ) -> Result<()> {
+        self.link_artifact_to_entity_with_context(
+            &CommandContext::system_with_id(command_id),
+            entity_id,
+            artifact_id,
+            role,
+        )
+    }
+
+    pub fn link_artifact_to_entity_with_context(
+        &self,
+        command: &CommandContext,
+        entity_id: &str,
+        artifact_id: &str,
+        role: &str,
+    ) -> Result<()> {
+        validate_command_context(command)?;
+        validate_nonempty(role, 100, "artifact role")?;
+        let mut connection = self.connection()?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if prior_result(
+            &tx,
+            &self.manifest.project_id,
+            command,
+            "LinkArtifactToEntity",
+        )?
+        .is_some()
+        {
+            return tx.commit().map_err(Into::into);
+        }
+        let valid_pair: bool = tx.query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM entities e JOIN artifacts a ON a.project_id=e.project_id
+                WHERE e.id=?1 AND a.id=?2 AND e.project_id=?3
+             )",
+            params![entity_id, artifact_id, self.manifest.project_id],
+            |row| row.get(0),
+        )?;
+        if !valid_pair {
+            return Err(CoreError::Validation(
+                "entity and artifact must exist in the same project".into(),
+            ));
+        }
+        tx.execute(
+            "INSERT INTO entity_artifacts(entity_id,artifact_id,role,created_at) VALUES(?1,?2,?3,?4)",
+            params![entity_id, artifact_id, role, Utc::now().to_rfc3339()],
+        )?;
+        append_event_with_context(
+            &tx,
+            &self.manifest.project_id,
+            command,
+            Some(entity_id),
+            "artifact.linked",
+            &json!({"entity_id": entity_id, "artifact_id": artifact_id, "role": role}),
+        )?;
+        record_command_with_context(
+            &tx,
+            command,
+            &self.manifest.project_id,
+            "LinkArtifactToEntity",
+            None,
+            None,
+            &json!({"entity_id": entity_id, "artifact_id": artifact_id, "role": role}),
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn create_checkpoint(
+        &self,
+        command_id: &str,
+        scope: CheckpointScope,
+        summary: &Value,
+        source_entity_ids: &[String],
+    ) -> Result<Checkpoint> {
+        self.create_checkpoint_with_context(
+            &CommandContext::system_with_id(command_id),
+            scope,
+            summary,
+            source_entity_ids,
+        )
+    }
+
+    pub fn create_checkpoint_with_context(
+        &self,
+        command: &CommandContext,
+        scope: CheckpointScope,
+        summary: &Value,
+        source_entity_ids: &[String],
+    ) -> Result<Checkpoint> {
+        validate_command_context(command)?;
+        let summary_json = bounded_json(summary, MAX_CHECKPOINT_JSON_BYTES, "checkpoint summary")?;
+        let mut unique_sources = HashSet::new();
+        if !source_entity_ids.iter().all(|id| unique_sources.insert(id)) {
+            return Err(CoreError::Validation("duplicate checkpoint source".into()));
+        }
+        let mut connection = self.connection()?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if let Some(Some(result_id)) =
+            prior_result(&tx, &self.manifest.project_id, command, "CreateCheckpoint")?
+        {
+            tx.commit()?;
+            return self.get_checkpoint(&result_id);
+        }
+        let sequence: i64 = tx.query_row(
+            "SELECT ledger_sequence FROM projects WHERE id=?1",
+            [&self.manifest.project_id],
+            |row| row.get(0),
+        )?;
+        let mut source_versions = Vec::with_capacity(source_entity_ids.len());
+        for source in source_entity_ids {
+            let version: i64 = tx
+                .query_row(
+                    "SELECT version FROM entities WHERE id=?1 AND project_id=?2",
+                    params![source, self.manifest.project_id],
+                    |row| row.get(0),
+                )
+                .optional()?
+                .ok_or_else(|| {
+                    CoreError::Validation(format!("checkpoint source {source} is invalid"))
+                })?;
+            source_versions.push((source, version));
+        }
+        let id = new_id();
+        let now = Utc::now().to_rfc3339();
+        tx.execute(
+            "INSERT INTO checkpoints(id,project_id,scope,ledger_sequence,summary_json,created_at,created_by)
+             VALUES(?1,?2,?3,?4,?5,?6,?7)",
+            params![
+                id,
+                self.manifest.project_id,
+                scope.as_str(),
+                sequence,
+                summary_json,
+                now,
+                command.actor.id
+            ],
+        )?;
+        for (source, version) in source_versions {
+            tx.execute(
+                "INSERT INTO checkpoint_sources(checkpoint_id,source_entity_id,source_version)
+                 VALUES(?1,?2,?3)",
+                params![id, source, version],
+            )?;
+        }
+        append_event_with_context(
+            &tx,
+            &self.manifest.project_id,
+            command,
+            Some(&id),
+            "checkpoint.created",
+            &json!({"checkpoint_id": id, "scope": scope.as_str(), "source_ledger_sequence": sequence}),
+        )?;
+        record_command_with_context(
+            &tx,
+            command,
+            &self.manifest.project_id,
+            "CreateCheckpoint",
+            Some(&id),
+            None,
+            &json!({"scope": scope.as_str(), "source_count": source_entity_ids.len()}),
+        )?;
+        tx.commit()?;
+        self.get_checkpoint(&id)
+    }
+
+    pub fn get_checkpoint(&self, id: &str) -> Result<Checkpoint> {
+        let connection = self.connection()?;
+        let raw = connection
+            .query_row(
+                "SELECT id,project_id,scope,ledger_sequence,summary_json,created_at,created_by
+                 FROM checkpoints WHERE id=?1 AND project_id=?2",
+                params![id, self.manifest.project_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, String>(5)?,
+                        row.get::<_, String>(6)?,
+                    ))
+                },
+            )
+            .optional()?
+            .ok_or_else(|| CoreError::NotFound(id.into()))?;
+        Ok(Checkpoint {
+            id: raw.0,
+            project_id: raw.1,
+            scope: raw.2,
+            ledger_sequence: raw.3,
+            summary: serde_json::from_str(&raw.4)?,
+            created_at: raw.5,
+            created_by: raw.6,
+        })
+    }
+
+    pub fn enqueue_job(
+        &self,
+        job_type: &str,
+        idempotency_key: &str,
+        payload: &Value,
+        max_attempts: i64,
+    ) -> Result<Job> {
+        self.enqueue_job_with_context(
+            &CommandContext::system(),
+            job_type,
+            idempotency_key,
+            payload,
+            max_attempts,
+        )
+    }
+
+    pub fn enqueue_job_with_context(
+        &self,
+        command: &CommandContext,
+        job_type: &str,
+        idempotency_key: &str,
+        payload: &Value,
+        max_attempts: i64,
+    ) -> Result<Job> {
+        validate_command_context(command)?;
+        validate_nonempty(job_type, 100, "job_type")?;
+        validate_nonempty(idempotency_key, 200, "idempotency_key")?;
+        if !(1..=20).contains(&max_attempts) {
+            return Err(CoreError::Validation(
+                "max_attempts must be within 1..=20".into(),
+            ));
+        }
+        let payload_json = bounded_json(payload, MAX_ENTITY_JSON_BYTES, "job payload")?;
+        let mut connection = self.connection()?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let existing: Option<String> = tx
+            .query_row(
+                "SELECT id FROM jobs WHERE project_id=?1 AND job_type=?2 AND idempotency_key=?3",
+                params![self.manifest.project_id, job_type, idempotency_key],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if let Some(id) = existing {
+            tx.commit()?;
+            return self.get_job(&id);
+        }
+        let active: i64 = tx.query_row(
+            "SELECT count(*) FROM jobs WHERE project_id=?1 AND state IN ('queued','running')",
+            [&self.manifest.project_id],
+            |row| row.get(0),
+        )?;
+        if active >= MAX_ACTIVE_JOBS {
+            return Err(CoreError::Conflict(format!(
+                "active job limit {MAX_ACTIVE_JOBS} reached"
+            )));
+        }
+        let id = new_id();
+        let now = Utc::now().to_rfc3339();
+        tx.execute(
+            "INSERT INTO jobs(
+                id,project_id,job_type,state,attempts,max_attempts,payload_json,idempotency_key,
+                available_at,created_at,updated_at,created_by,updated_by
+             ) VALUES(?1,?2,?3,'queued',0,?4,?5,?6,?7,?7,?7,?8,?8)",
+            params![
+                id,
+                self.manifest.project_id,
+                job_type,
+                max_attempts,
+                payload_json,
+                idempotency_key,
+                now,
+                command.actor.id
+            ],
+        )?;
+        tx.commit()?;
+        self.get_job(&id)
+    }
+
+    pub fn claim_next_job(&self, lease: Duration) -> Result<Option<Job>> {
+        let mut connection = self.connection()?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let now = Utc::now();
+        let now_text = now.to_rfc3339();
+        let id: Option<String> = tx
+            .query_row(
+                "SELECT id FROM jobs
+                 WHERE project_id=?1 AND (
+                    (state='queued' AND available_at<=?2 AND cancellation_requested=0) OR
+                    (state='running' AND lease_until IS NOT NULL AND lease_until<?2 AND cancellation_requested=0)
+                 ) AND attempts < max_attempts
+                 ORDER BY created_at LIMIT 1",
+                params![self.manifest.project_id, now_text],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let Some(id) = id else {
+            tx.commit()?;
+            return Ok(None);
+        };
+        let lease_until = (now
+            + ChronoDuration::from_std(lease).map_err(|_| {
+                CoreError::Validation("job lease duration is outside supported range".into())
+            })?)
+        .to_rfc3339();
+        tx.execute(
+            "UPDATE jobs SET state='running',attempts=attempts+1,lease_until=?2,updated_at=?3,
+                    updated_by='continuum-worker' WHERE id=?1",
+            params![id, lease_until, now_text],
+        )?;
+        tx.commit()?;
+        Ok(Some(self.get_job(&id)?))
+    }
+
+    pub fn finish_job(&self, id: &str, succeeded: bool, error: Option<&str>) -> Result<Job> {
+        let connection = self.connection()?;
+        let state = if succeeded { "succeeded" } else { "failed" };
+        let changed = connection.execute(
+            "UPDATE jobs SET state=CASE WHEN cancellation_requested=1 THEN 'cancelled' ELSE ?3 END,
+                    lease_until=NULL,last_error=?4,updated_at=?5,updated_by='continuum-worker'
+             WHERE id=?1 AND project_id=?2 AND state='running'",
+            params![
+                id,
+                self.manifest.project_id,
+                state,
+                error.map(|value| truncate(value, 2_000)),
+                Utc::now().to_rfc3339()
+            ],
+        )?;
+        if changed != 1 {
+            return Err(CoreError::Conflict(format!("job {id} is not running")));
+        }
+        self.get_job(id)
+    }
+
+    pub fn update_job_progress(
+        &self,
+        id: &str,
+        current: i64,
+        total: Option<i64>,
+        message: Option<&str>,
+    ) -> Result<Job> {
+        if current < 0 || total.is_some_and(|value| value < current || value < 0) {
+            return Err(CoreError::Validation(
+                "job progress must be non-negative and current cannot exceed total".into(),
+            ));
+        }
+        let connection = self.connection()?;
+        let changed = connection.execute(
+            "UPDATE jobs SET progress_current=?3,progress_total=?4,progress_message=?5,updated_at=?6,
+                    updated_by='continuum-worker'
+             WHERE id=?1 AND project_id=?2 AND state='running'",
+            params![
+                id,
+                self.manifest.project_id,
+                current,
+                total,
+                message.map(|value| truncate(value, 500)),
+                Utc::now().to_rfc3339()
+            ],
+        )?;
+        if changed != 1 {
+            return Err(CoreError::Conflict(format!("job {id} is not running")));
+        }
+        self.get_job(id)
+    }
+
+    pub fn request_job_cancellation(&self, id: &str) -> Result<Job> {
+        let connection = self.connection()?;
+        let changed = connection.execute(
+            "UPDATE jobs SET cancellation_requested=1,
+                    state=CASE WHEN state='queued' THEN 'cancelled' ELSE state END,
+                    updated_at=?3,updated_by='continuum-core'
+             WHERE id=?1 AND project_id=?2 AND state IN ('queued','running')",
+            params![id, self.manifest.project_id, Utc::now().to_rfc3339()],
+        )?;
+        if changed != 1 {
+            return Err(CoreError::Conflict(format!(
+                "job {id} cannot be cancelled from its current state"
+            )));
+        }
+        self.get_job(id)
+    }
+
+    pub fn retry_failed_job(&self, id: &str) -> Result<Job> {
+        let connection = self.connection()?;
+        let now = Utc::now().to_rfc3339();
+        let changed = connection.execute(
+            "UPDATE jobs SET state='queued',cancellation_requested=0,available_at=?3,
+                    lease_until=NULL,last_error=NULL,updated_at=?3,updated_by='continuum-core'
+             WHERE id=?1 AND project_id=?2 AND state='failed' AND attempts<max_attempts",
+            params![id, self.manifest.project_id, now],
+        )?;
+        if changed != 1 {
+            return Err(CoreError::Conflict(format!("job {id} is not retryable")));
+        }
+        self.get_job(id)
+    }
+
+    pub fn get_job(&self, id: &str) -> Result<Job> {
+        let connection = self.connection()?;
+        connection
+            .query_row(
+                "SELECT id,project_id,job_type,state,attempts,max_attempts,payload_json,
+                        progress_current,progress_total,progress_message,cancellation_requested,
+                        created_by,updated_by
+                 FROM jobs WHERE id=?1 AND project_id=?2",
+                params![id, self.manifest.project_id],
+                |row| {
+                    Ok(Job {
+                        id: row.get(0)?,
+                        project_id: row.get(1)?,
+                        job_type: row.get(2)?,
+                        state: row.get(3)?,
+                        attempts: row.get(4)?,
+                        max_attempts: row.get(5)?,
+                        payload_json: row.get(6)?,
+                        progress_current: row.get(7)?,
+                        progress_total: row.get(8)?,
+                        progress_message: row.get(9)?,
+                        cancellation_requested: row.get(10)?,
+                        created_by: row.get(11)?,
+                        updated_by: row.get(12)?,
+                    })
+                },
+            )
+            .optional()?
+            .ok_or_else(|| CoreError::NotFound(id.into()))
+    }
+
+    pub fn claim_next_outbox(&self, lease: Duration) -> Result<Option<OutboxMessage>> {
+        let mut connection = self.connection()?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let now = Utc::now();
+        let now_text = now.to_rfc3339();
+        let id: Option<String> = tx
+            .query_row(
+                "SELECT id FROM outbox
+                 WHERE project_id=?1 AND processed_at IS NULL
+                   AND (lease_until IS NULL OR lease_until<?2)
+                 ORDER BY created_at,id LIMIT 1",
+                params![self.manifest.project_id, now_text],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let Some(id) = id else {
+            tx.commit()?;
+            return Ok(None);
+        };
+        let lease_until = (now
+            + ChronoDuration::from_std(lease).map_err(|_| {
+                CoreError::Validation("outbox lease duration is outside supported range".into())
+            })?)
+        .to_rfc3339();
+        tx.execute(
+            "UPDATE outbox SET attempts=attempts+1,lease_until=?2,last_error=NULL WHERE id=?1",
+            params![id, lease_until],
+        )?;
+        let message = read_outbox(&tx, &self.manifest.project_id, &id)?;
+        tx.commit()?;
+        Ok(Some(message))
+    }
+
+    pub fn complete_outbox(&self, id: &str) -> Result<()> {
+        let connection = self.connection()?;
+        let changed = connection.execute(
+            "UPDATE outbox SET processed_at=?3,lease_until=NULL,last_error=NULL
+             WHERE id=?1 AND project_id=?2 AND processed_at IS NULL AND lease_until IS NOT NULL",
+            params![id, self.manifest.project_id, Utc::now().to_rfc3339()],
+        )?;
+        if changed != 1 {
+            return Err(CoreError::Conflict(format!(
+                "outbox message {id} is not actively leased"
+            )));
+        }
+        Ok(())
+    }
+
+    pub fn fail_outbox(&self, id: &str, error: &str) -> Result<()> {
+        let connection = self.connection()?;
+        let changed = connection.execute(
+            "UPDATE outbox SET lease_until=NULL,last_error=?3
+             WHERE id=?1 AND project_id=?2 AND processed_at IS NULL AND lease_until IS NOT NULL",
+            params![id, self.manifest.project_id, truncate(error, 2_000)],
+        )?;
+        if changed != 1 {
+            return Err(CoreError::Conflict(format!(
+                "outbox message {id} is not actively leased"
+            )));
+        }
+        Ok(())
+    }
+
+    pub fn get_audit_event(&self, id: &str) -> Result<AuditEvent> {
+        let connection = self.connection()?;
+        connection
+            .query_row(
+                "SELECT id,project_id,ledger_sequence,command_id,aggregate_id,event_type,event_version,
+                        actor_kind,actor_id,correlation_id,causation_id,payload_json,occurred_at
+                 FROM audit_events WHERE id=?1 AND project_id=?2",
+                params![id, self.manifest.project_id],
+                |row| {
+                    Ok(AuditEvent {
+                        id: row.get(0)?,
+                        project_id: row.get(1)?,
+                        ledger_sequence: row.get(2)?,
+                        command_id: row.get(3)?,
+                        aggregate_id: row.get(4)?,
+                        event_type: row.get(5)?,
+                        event_version: row.get(6)?,
+                        actor_kind: row.get(7)?,
+                        actor_id: row.get(8)?,
+                        correlation_id: row.get(9)?,
+                        causation_id: row.get(10)?,
+                        payload_json: row.get(11)?,
+                        occurred_at: row.get(12)?,
+                    })
+                },
+            )
+            .optional()?
+            .ok_or_else(|| CoreError::NotFound(id.into()))
+    }
+
+    pub fn verify_integrity(&self) -> Result<IntegrityReport> {
+        let connection = self.connection()?;
+        let sqlite_status: String =
+            connection.query_row("PRAGMA integrity_check", [], |row| row.get(0))?;
+        let mut report = IntegrityReport::default();
+        if sqlite_status != "ok" {
+            report.issues.push(IntegrityIssue {
+                code: "database_integrity".into(),
+                path_or_id: LEDGER_FILE.into(),
+                guidance:
+                    "Restore the latest verified backup; preserve this project for diagnostics."
+                        .into(),
+            });
+        }
+
+        let mut foreign_key_check = connection.prepare("PRAGMA foreign_key_check")?;
+        let foreign_key_issues = foreign_key_check
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<i64>>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        for (table, row_id, parent) in foreign_key_issues {
+            report.issues.push(IntegrityIssue {
+                code: "dangling_foreign_key".into(),
+                path_or_id: format!("{table}:{}", row_id.unwrap_or_default()),
+                guidance: format!(
+                    "Recover the missing {parent} row from backup or quarantine the referencing record."
+                ),
+            });
+        }
+
+        let mut statement = connection.prepare(
+            "SELECT id,sha256,byte_size,relative_path,availability FROM artifacts WHERE project_id=?1",
+        )?;
+        let records = statement
+            .query_map([&self.manifest.project_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let mut expected_paths = HashSet::new();
+        for (id, expected_hash, expected_size, relative, availability) in records {
+            report.checked_artifacts += 1;
+            let expected_relative = relative_content_path(&expected_hash)?;
+            if path_to_slashes(&expected_relative) != relative || !safe_relative_path(&relative) {
+                report.issues.push(IntegrityIssue {
+                    code: "invalid_artifact_path".into(),
+                    path_or_id: id,
+                    guidance: "Quarantine the metadata row and recover from a verified export."
+                        .into(),
+                });
+                continue;
+            }
+            let path = self.root.join(&relative);
+            if availability == ArtifactAvailability::PurgedPayload.as_str() {
+                if path.exists() {
+                    report.issues.push(IntegrityIssue {
+                        code: "purged_artifact_payload_present".into(),
+                        path_or_id: relative,
+                        guidance: "Move the payload to quarantine and complete the approved purge procedure.".into(),
+                    });
+                }
+                continue;
+            }
+            expected_paths.insert(relative.clone());
+            if !path.exists() {
+                if availability == ArtifactAvailability::Unavailable.as_str() {
+                    continue;
+                }
+                report.issues.push(IntegrityIssue {
+                    code: "missing_artifact_payload".into(),
+                    path_or_id: relative,
+                    guidance: "Restore the payload from a verified backup/export or remove its references after review.".into(),
+                });
+                continue;
+            }
+            let (actual_hash, actual_size) = hash_file(&path)?;
+            if actual_hash != expected_hash || actual_size as i64 != expected_size {
+                report.issues.push(IntegrityIssue {
+                    code: "artifact_hash_or_size_mismatch".into(),
+                    path_or_id: relative,
+                    guidance:
+                        "Move the payload to quarantine and restore the expected hash from backup."
+                            .into(),
+                });
+            }
+        }
+        let artifact_root = self.root.join("artifacts/sha256");
+        for file in walk_files(&artifact_root)? {
+            let relative = path_to_slashes(
+                file.strip_prefix(&self.root)
+                    .map_err(|_| CoreError::Validation("artifact escaped project root".into()))?,
+            );
+            if !expected_paths.contains(&relative) {
+                report.issues.push(IntegrityIssue {
+                    code: "orphan_artifact_payload".into(),
+                    path_or_id: relative,
+                    guidance: "Keep in recovery quarantine until provenance is established; then relink or remove explicitly.".into(),
+                });
+            }
+        }
+        Ok(report)
+    }
+
+    pub fn backup_database(&self, destination: impl AsRef<Path>) -> Result<PathBuf> {
+        let destination = destination.as_ref();
+        if destination.exists() {
+            return Err(CoreError::Conflict(format!(
+                "backup destination already exists: {}",
+                destination.display()
+            )));
+        }
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        backup_connection(&self.connection()?, destination)?;
+        Ok(destination.to_path_buf())
+    }
+
+    pub fn export_project(&self, destination: impl AsRef<Path>) -> Result<()> {
+        let destination = destination.as_ref();
+        if destination.exists() {
+            return Err(CoreError::Conflict(format!(
+                "export destination already exists: {}",
+                destination.display()
+            )));
+        }
+        let integrity = self.verify_integrity()?;
+        if !integrity.is_healthy() {
+            return Err(CoreError::Conflict(
+                "project export blocked because integrity verification failed".into(),
+            ));
+        }
+        fs::create_dir_all(destination)?;
+        fs::copy(
+            self.root.join(MANIFEST_FILE),
+            destination.join(MANIFEST_FILE),
+        )?;
+        self.backup_database(destination.join(LEDGER_FILE))?;
+        copy_tree(&self.root.join("artifacts"), &destination.join("artifacts"))?;
+        fs::write(
+            destination.join("continuum.export.json"),
+            serde_json::to_vec_pretty(&json!({
+                "export_version": 1,
+                "project_id": self.manifest.project_id,
+                "created_at": Utc::now().to_rfc3339(),
+                "schema_version": CORE_SCHEMA_VERSION,
+                "integrity": "verified"
+            }))?,
+        )?;
+        Ok(())
+    }
+
+    pub fn import_export(source: impl AsRef<Path>, destination: impl AsRef<Path>) -> Result<Self> {
+        let source = source.as_ref();
+        let destination = destination.as_ref();
+        if destination.exists() {
+            return Err(CoreError::Conflict(format!(
+                "import destination already exists: {}",
+                destination.display()
+            )));
+        }
+        ProjectManifest::load(source)?;
+        let staging = destination.with_extension(format!("importing-{}", new_id()));
+        copy_tree(source, &staging)?;
+        for directory in ["staging", "quarantine", "backups", "derived"] {
+            fs::create_dir_all(staging.join(directory))?;
+        }
+        let imported = Self::open(&staging)?;
+        let report = imported.verify_integrity()?;
+        if !report.is_healthy() {
+            return Err(CoreError::Conflict(
+                "import verification failed; staged copy retained for diagnostics".into(),
+            ));
+        }
+        fs::rename(&staging, destination)?;
+        Self::open(destination)
+    }
+
+    #[doc(hidden)]
+    pub fn debug_connection(&self) -> Result<Connection> {
+        self.connection()
+    }
+
+    fn connection(&self) -> Result<Connection> {
+        open_connection(&self.manifest.ledger_path(&self.root))
+    }
+}
+
+fn open_connection(path: &Path) -> Result<Connection> {
+    let connection = Connection::open(path)?;
+    connection.busy_timeout(Duration::from_secs(5))?;
+    connection.execute_batch(
+        "PRAGMA foreign_keys=ON;
+         PRAGMA journal_mode=WAL;
+         PRAGMA synchronous=NORMAL;
+         PRAGMA trusted_schema=OFF;",
+    )?;
+    Ok(connection)
+}
+
+fn apply_migrations(connection: &mut Connection) -> Result<()> {
+    connection.execute_batch(
+        "CREATE TABLE IF NOT EXISTS schema_migrations(
+            version INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            checksum TEXT NOT NULL,
+            applied_at TEXT NOT NULL
+        );",
+    )?;
+    let migrations = [
+        (1_u32, "core", MIGRATION_1),
+        (2_u32, "contract_alignment", MIGRATION_2),
+    ];
+    for (version, name, sql) in migrations {
+        let checksum = hex::encode(Sha256::digest(sql.as_bytes()));
+        let existing: Option<String> = connection
+            .query_row(
+                "SELECT checksum FROM schema_migrations WHERE version=?1",
+                [version],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if let Some(existing) = existing {
+            if existing != checksum {
+                return Err(CoreError::MigrationChecksum { version });
+            }
+            continue;
+        }
+        apply_single_migration(connection, version, name, sql, &checksum)?;
+    }
+    let version: u32 = connection.query_row(
+        "SELECT COALESCE(max(version),0) FROM schema_migrations",
+        [],
+        |row| row.get(0),
+    )?;
+    if version > CORE_SCHEMA_VERSION {
+        return Err(CoreError::UnsupportedSchema {
+            found: version,
+            supported: CORE_SCHEMA_VERSION,
+        });
+    }
+    Ok(())
+}
+
+fn current_schema_version(connection: &Connection) -> Result<u32> {
+    let migrations_exist: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !migrations_exist {
+        return Ok(0);
+    }
+    connection
+        .query_row(
+            "SELECT COALESCE(max(version),0) FROM schema_migrations",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(Into::into)
+}
+
+fn apply_single_migration(
+    connection: &mut Connection,
+    version: u32,
+    name: &str,
+    sql: &str,
+    checksum: &str,
+) -> Result<()> {
+    let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    tx.execute_batch(sql)?;
+    tx.execute(
+        "INSERT INTO schema_migrations(version,name,checksum,applied_at) VALUES(?1,?2,?3,?4)",
+        params![version, name, checksum, Utc::now().to_rfc3339()],
+    )?;
+    tx.commit()?;
+    Ok(())
+}
+
+fn backup_connection(source: &Connection, destination: &Path) -> Result<()> {
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut target = Connection::open(destination)?;
+    let backup = rusqlite::backup::Backup::new(source, &mut target)?;
+    backup.run_to_completion(64, Duration::from_millis(5), None)?;
+    drop(backup);
+    let status: String = target.query_row("PRAGMA integrity_check", [], |row| row.get(0))?;
+    if status != "ok" {
+        return Err(CoreError::ArtifactIntegrity {
+            path: destination.to_path_buf(),
+            reason: format!("backup database integrity check returned {status}"),
+        });
+    }
+    Ok(())
+}
+
+fn prior_result(
+    tx: &Transaction<'_>,
+    project_id: &str,
+    command: &CommandContext,
+    operation: &str,
+) -> Result<Option<Option<String>>> {
+    let existing: Option<(String, Option<String>)> = tx
+        .query_row(
+            "SELECT operation,result_id FROM commands
+             WHERE id=?1 OR (project_id=?2 AND operation=?3 AND idempotency_key=?4)
+             ORDER BY CASE WHEN id=?1 THEN 0 ELSE 1 END LIMIT 1",
+            params![
+                command.command_id,
+                project_id,
+                operation,
+                command.idempotency_key
+            ],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    match existing {
+        Some((existing_operation, _)) if existing_operation != operation => {
+            Err(CoreError::Conflict(format!(
+                "command {} was already used for {existing_operation}",
+                command.command_id
+            )))
+        }
+        Some((_, result)) => Ok(Some(result)),
+        None => Ok(None),
+    }
+}
+
+fn record_command_with_context(
+    tx: &Transaction<'_>,
+    command: &CommandContext,
+    project_id: &str,
+    operation: &str,
+    result_id: Option<&str>,
+    expected_version: Option<i64>,
+    payload: &Value,
+) -> Result<()> {
+    validate_command_context(command)?;
+    let payload_json = bounded_json(payload, MAX_ENTITY_JSON_BYTES, "command payload")?;
+    tx.execute(
+        "INSERT INTO commands(
+            id,project_id,operation,result_id,created_at,command_type_version,actor_kind,actor_id,
+            expected_version,idempotency_key,payload_schema_version,payload_json,issued_at,
+            correlation_id,causation_id
+         ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
+        params![
+            command.command_id,
+            project_id,
+            operation,
+            result_id,
+            Utc::now().to_rfc3339(),
+            command.command_type_version,
+            command.actor.kind.as_str(),
+            command.actor.id,
+            expected_version,
+            command.idempotency_key,
+            command.payload_schema_version,
+            payload_json,
+            command.issued_at,
+            command.correlation_id,
+            command.causation_id
+        ],
+    )?;
+    Ok(())
+}
+
+fn append_event_with_context(
+    tx: &Transaction<'_>,
+    project_id: &str,
+    command: &CommandContext,
+    aggregate_id: Option<&str>,
+    event_type: &str,
+    payload: &Value,
+) -> Result<i64> {
+    validate_command_context(command)?;
+    let payload_json = bounded_json(payload, MAX_ENTITY_JSON_BYTES, "event payload")?;
+    let current: i64 = tx.query_row(
+        "SELECT ledger_sequence FROM projects WHERE id=?1",
+        [project_id],
+        |row| row.get(0),
+    )?;
+    let sequence = current + 1;
+    let now = Utc::now().to_rfc3339();
+    let event_id = new_id();
+    tx.execute(
+        "UPDATE projects SET ledger_sequence=?2,updated_at=?3 WHERE id=?1",
+        params![project_id, sequence, now],
+    )?;
+    tx.execute(
+        "INSERT INTO audit_events(
+            id,project_id,ledger_sequence,command_id,event_type,payload_json,occurred_at,
+            aggregate_id,event_version,actor_kind,actor_id,correlation_id,causation_id
+         ) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,1,?9,?10,?11,?12)",
+        params![
+            event_id,
+            project_id,
+            sequence,
+            command.command_id,
+            event_type,
+            payload_json,
+            now,
+            aggregate_id,
+            command.actor.kind.as_str(),
+            command.actor.id,
+            command.correlation_id,
+            command.causation_id
+        ],
+    )?;
+    tx.execute(
+        "INSERT INTO outbox(id,project_id,audit_event_id,topic,payload_json,created_at)
+         VALUES(?1,?2,?3,?4,?5,?6)",
+        params![
+            new_id(),
+            project_id,
+            event_id,
+            event_type,
+            payload_json,
+            now
+        ],
+    )?;
+    Ok(sequence)
+}
+
+fn validate_command_context(command: &CommandContext) -> Result<()> {
+    validate_id(&command.command_id, "command_id")?;
+    validate_id(&command.correlation_id, "correlation_id")?;
+    if let Some(causation_id) = &command.causation_id {
+        validate_id(causation_id, "causation_id")?;
+    }
+    validate_nonempty(&command.actor.id, 200, "actor id")?;
+    validate_nonempty(&command.idempotency_key, 200, "idempotency key")?;
+    if command.actor.kind == ActorKind::AiProposal {
+        return Err(CoreError::Validation(
+            "AI proposals cannot execute canonical Continuity Core commands".into(),
+        ));
+    }
+    if command.command_type_version == 0 || command.payload_schema_version == 0 {
+        return Err(CoreError::Validation(
+            "command and payload schema versions must be positive".into(),
+        ));
+    }
+    chrono::DateTime::parse_from_rfc3339(&command.issued_at)
+        .map_err(|_| CoreError::Validation("issued_at must be RFC3339".into()))?;
+    Ok(())
+}
+
+fn legacy_origin(origin: OriginKind) -> &'static str {
+    match origin {
+        OriginKind::User => "manual",
+        OriginKind::Deterministic => "system",
+        OriginKind::Import => "imported",
+        OriginKind::External => "external",
+        OriginKind::Legacy => "legacy",
+        OriginKind::AiProposal | OriginKind::Unknown => "unknown",
+    }
+}
+
+fn entity_type_in_project(
+    tx: &Transaction<'_>,
+    project_id: &str,
+    entity_id: &str,
+) -> Result<String> {
+    tx.query_row(
+        "SELECT entity_type FROM entities WHERE id=?1 AND project_id=?2",
+        params![entity_id, project_id],
+        |row| row.get(0),
+    )
+    .optional()?
+    .ok_or_else(|| {
+        CoreError::Validation(format!(
+            "entity {entity_id} is absent or belongs to another project"
+        ))
+    })
+}
+
+fn more_restrictive_classification<'a>(existing: &'a str, requested: &'a str) -> &'a str {
+    fn rank(value: &str) -> u8 {
+        match value {
+            "public" => 0,
+            "internal" => 1,
+            "confidential" => 2,
+            "secret" => 3,
+            "never_send" => 4,
+            _ => 4,
+        }
+    }
+    if rank(existing) >= rank(requested) {
+        existing
+    } else {
+        requested
+    }
+}
+
+fn read_outbox(connection: &Connection, project_id: &str, id: &str) -> Result<OutboxMessage> {
+    connection
+        .query_row(
+            "SELECT id,project_id,audit_event_id,topic,payload_json,attempts
+             FROM outbox WHERE id=?1 AND project_id=?2",
+            params![id, project_id],
+            |row| {
+                Ok(OutboxMessage {
+                    id: row.get(0)?,
+                    project_id: row.get(1)?,
+                    audit_event_id: row.get(2)?,
+                    topic: row.get(3)?,
+                    payload_json: row.get(4)?,
+                    attempts: row.get(5)?,
+                })
+            },
+        )
+        .map_err(Into::into)
+}
+
+fn bounded_json(value: &Value, max_bytes: usize, label: &str) -> Result<String> {
+    let encoded = serde_json::to_string(value)?;
+    if encoded.len() > max_bytes {
+        return Err(CoreError::Validation(format!(
+            "{label} exceeds {max_bytes} bytes"
+        )));
+    }
+    Ok(encoded)
+}
+
+fn validate_id(value: &str, label: &str) -> Result<()> {
+    let parsed = uuid::Uuid::parse_str(value)
+        .map_err(|_| CoreError::Validation(format!("{label} must be a UUID")))?;
+    if parsed.get_version_num() != 7 {
+        return Err(CoreError::Validation(format!("{label} must be UUIDv7")));
+    }
+    Ok(())
+}
+
+fn validate_nonempty(value: &str, max_chars: usize, label: &str) -> Result<()> {
+    let length = value.trim().chars().count();
+    if length == 0 || length > max_chars {
+        return Err(CoreError::Validation(format!(
+            "{label} must contain 1..={max_chars} characters"
+        )));
+    }
+    Ok(())
+}
+
+fn truncate(value: &str, max_chars: usize) -> String {
+    value.chars().take(max_chars).collect()
+}
+
+fn path_to_slashes(path: &Path) -> String {
+    path.components()
+        .map(|component| component.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn safe_relative_path(path: &str) -> bool {
+    let path = Path::new(path);
+    !path.is_absolute()
+        && path
+            .components()
+            .all(|component| matches!(component, std::path::Component::Normal(_)))
+}
+
+fn walk_files(root: &Path) -> Result<Vec<PathBuf>> {
+    if !root.exists() {
+        return Ok(Vec::new());
+    }
+    let mut pending = vec![root.to_path_buf()];
+    let mut files = Vec::new();
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(directory)? {
+            let entry = entry?;
+            let kind = entry.file_type()?;
+            if kind.is_symlink() {
+                return Err(CoreError::Validation(format!(
+                    "symlink is not allowed in project payload tree: {}",
+                    entry.path().display()
+                )));
+            }
+            if kind.is_dir() {
+                pending.push(entry.path());
+            } else if kind.is_file() {
+                files.push(entry.path());
+            }
+        }
+    }
+    Ok(files)
+}
+
+fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
+    if !source.exists() {
+        fs::create_dir_all(destination)?;
+        return Ok(());
+    }
+    fs::create_dir_all(destination)?;
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let kind = entry.file_type()?;
+        if kind.is_symlink() {
+            return Err(CoreError::Validation(format!(
+                "symlink is not allowed during export/import: {}",
+                entry.path().display()
+            )));
+        }
+        let target = destination.join(entry.file_name());
+        if kind.is_dir() {
+            copy_tree(&entry.path(), &target)?;
+        } else if kind.is_file() {
+            fs::copy(entry.path(), target)?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn failed_migration_rolls_back_every_statement() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut connection = Connection::open(directory.path().join("migration.sqlite3")).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE schema_migrations(
+                    version INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    checksum TEXT NOT NULL,
+                    applied_at TEXT NOT NULL
+                 );
+                 CREATE TABLE stable(value TEXT NOT NULL);
+                 INSERT INTO stable(value) VALUES('before');",
+            )
+            .unwrap();
+
+        let result = apply_single_migration(
+            &mut connection,
+            2,
+            "deliberate_failure",
+            "INSERT INTO stable(value) VALUES('must_rollback'); THIS IS INVALID SQL;",
+            "test-checksum",
+        );
+        assert!(result.is_err());
+        let stable_rows: i64 = connection
+            .query_row("SELECT count(*) FROM stable", [], |row| row.get(0))
+            .unwrap();
+        let migration_rows: i64 = connection
+            .query_row("SELECT count(*) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(stable_rows, 1);
+        assert_eq!(migration_rows, 0);
+    }
+
+    #[test]
+    fn v1_project_is_backed_up_and_migrated_losslessly_to_v2() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("legacy-project");
+        fs::create_dir_all(&root).unwrap();
+        let project_id = new_id();
+        let entity_id = new_id();
+        let target_id = new_id();
+        let relationship_id = new_id();
+        let manifest = ProjectManifest::new(project_id.clone(), "Legacy fixture".into());
+        manifest.write_atomic(&root).unwrap();
+        let mut connection = open_connection(&manifest.ledger_path(&root)).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE schema_migrations(
+                    version INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    checksum TEXT NOT NULL,
+                    applied_at TEXT NOT NULL
+                );",
+            )
+            .unwrap();
+        let checksum = hex::encode(Sha256::digest(MIGRATION_1.as_bytes()));
+        apply_single_migration(&mut connection, 1, "core", MIGRATION_1, &checksum).unwrap();
+        let now = Utc::now().to_rfc3339();
+        connection
+            .execute(
+                "INSERT INTO projects(id,name,status,lifecycle_version,ledger_sequence,created_at,updated_at)
+                 VALUES(?1,'Legacy fixture','active',1,0,?2,?2)",
+                params![project_id, now],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO entities(id,project_id,entity_type,title,status,version,origin,data_json,created_at,updated_at)
+                 VALUES(?1,?2,'legacy.note','Legacy entity','active',1,'manual','{}',?3,?3)",
+                params![entity_id, project_id, now],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO entities(id,project_id,entity_type,title,status,version,origin,data_json,created_at,updated_at)
+                 VALUES(?1,?2,'legacy.note','Legacy target','active',1,'imported','{}',?3,?3)",
+                params![target_id, project_id, now],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO relationships(id,project_id,relation_type,source_entity_id,target_entity_id,origin,created_at)
+                 VALUES(?1,?2,'supports',?3,?4,'manual',?5)",
+                params![relationship_id, project_id, entity_id, target_id, now],
+            )
+            .unwrap();
+        drop(connection);
+
+        let store = ContinuityStore::open(&root).unwrap();
+        let migrated = store.get_entity(&entity_id).unwrap();
+        assert_eq!(migrated.origin, "user");
+        assert_eq!(migrated.created_by, "continuum-core");
+        let migrated_relationship = store.get_relationship(&relationship_id).unwrap();
+        assert_eq!(migrated_relationship.origin, "user");
+        assert_eq!(migrated_relationship.source_entity_type, "legacy.note");
+        assert_eq!(migrated_relationship.target_entity_type, "legacy.note");
+        let version: u32 = store
+            .debug_connection()
+            .unwrap()
+            .query_row("SELECT max(version) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(version, 2);
+        let backups = fs::read_dir(root.join("backups")).unwrap().count();
+        assert_eq!(backups, 1);
+    }
+}

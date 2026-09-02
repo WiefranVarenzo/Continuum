@@ -1,0 +1,20 @@
+[workspace]
+members = ["crates/continuum-core"]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "Apache-2.0"
+rust-version = "1.85"
+
+[workspace.dependencies]
+chrono = { version = "0.4", features = ["serde"] }
+hex = "0.4"
+rusqlite = { version = "0.38", features = ["backup", "bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tempfile = "3"
+thiserror = "2"
+uuid = { version = "1", features = ["serde", "v7"] }
+
