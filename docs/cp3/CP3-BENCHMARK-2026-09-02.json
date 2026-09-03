@@ -1,0 +1,56 @@
+{
+  "arch": "x86_64",
+  "benchmark_version": 1,
+  "build": "0.3.0",
+  "correctness": "all samples completed; final Continuity and Research integrity scan was healthy",
+  "cpu": "AMD Ryzen 5 5600H with Radeon Graphics",
+  "fixture": {
+    "checkpoint_sources": 1999,
+    "evidence": 999,
+    "name": "standard-research-v1",
+    "note": "CP2 50k entity / 150k relationship benchmark remains the core-scale regression fixture",
+    "question_evidence_links": 999,
+    "research_questions": 999,
+    "research_sessions": 1
+  },
+  "memory": "15745636 kB",
+  "milliseconds": {
+    "deterministic_research_report": {
+      "max": 21.590582,
+      "p50": 21.079129,
+      "p95": 21.554293
+    },
+    "metadata_text_search": {
+      "max": 2.076333,
+      "p50": 1.690126,
+      "p95": 2.039594
+    },
+    "research_checkpoint_create": {
+      "max": 15.98688,
+      "p50": 14.657456,
+      "p95": 15.56725
+    },
+    "research_resume_state": {
+      "max": 6.344468,
+      "p50": 5.904749,
+      "p95": 6.156463
+    },
+    "timeline_first_page": {
+      "max": 1.077691,
+      "p50": 0.762247,
+      "p95": 0.89109
+    }
+  },
+  "os": "linux",
+  "protocol": {
+    "network_included": false,
+    "samples": 30,
+    "warmups": 5
+  },
+  "targets_ms": {
+    "deterministic_research_report": 3000,
+    "metadata_text_search": 500,
+    "research_checkpoint_create": 1000,
+    "research_resume_state": 1000
+  }
+}

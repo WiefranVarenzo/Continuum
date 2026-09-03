@@ -1,6 +1,6 @@
 # Continuum Spaces and R&D Bridge
 
-> **Status:** Approved for CP2  
+> **Status:** Approved baseline; Research Space implemented through CP3
 > **Governing decision:** [ADR-001](../adr/ADR-001-MODULAR-SPACES-AND-OPTIONAL-RD-BRIDGE.md)
 
 ## 1. Capability Model

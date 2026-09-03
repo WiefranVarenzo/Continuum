@@ -1,10 +1,10 @@
 # Continuum - Product Requirements Document
 
-> **Status:** Approved CP1 product baseline  
-> **Version:** 1.0.0  
-> **Last updated:** 2026-08-31  
+> **Status:** Approved product baseline; implementation validated through CP3
+> **Version:** 1.1.0
+> **Last updated:** 2026-09-02
 > **Primary source of truth:** This Markdown document  
-> **Product stage:** CP2 PASS - Ready for CP3 Research Core  
+> **Product stage:** CP3 PASS - Ready for CP4 Development Core
 > **Change policy:** Material changes to product direction, domain boundaries, privacy posture, or checkpoint scope require an explicit decision record (ADR) and an update to this PRD.
 > **Related decision:** [ADR-001 - Modular Spaces and Optional R&D Bridge](docs/adr/ADR-001-MODULAR-SPACES-AND-OPTIONAL-RD-BRIDGE.md)
 
@@ -774,6 +774,8 @@ Deliverables:
 Exit: canonical CRUD, events, artifacts, recovery, and migrations pass integration and corruption tests.
 
 ### CP3 - Research Core
+
+Status: **PASS (validated 2026-09-02).** Architecture, implementation, traceability, acceptance, benchmark, and validation evidence are recorded in `docs/cp3/`.
 
 Purpose: implement deterministic research workflow.
 

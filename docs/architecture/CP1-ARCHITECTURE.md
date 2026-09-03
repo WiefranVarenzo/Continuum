@@ -1,6 +1,6 @@
 # CP1 Architecture Master Document
 
-> **Status:** Approved for CP2  
+> **Status:** Approved baseline; implemented through CP3
 > **Authority:** [Continuum PRD](../../CONTINUUM_PRD.md)  
 > **Decision baseline:** [CP1 Decision Register](../cp1/CP1-DECISION-REGISTER.md)
 

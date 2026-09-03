@@ -1,6 +1,6 @@
 # Continuum Data Architecture
 
-> **Status:** Approved for CP2  
+> **Status:** Approved baseline; implemented through schema v3
 > **Storage model:** SQLite canonical metadata + project-local content-addressed Artifact Store.
 
 ## 1. Data Authority
@@ -45,6 +45,8 @@ Core tables:
 - `outbox`
 
 Space-specific normalized tables reference `entities.id` and are added in CP3–CP5. Frequently queried lifecycle, type, version, time, origin, source/target, hash, sequence, and job-state fields remain normalized and indexed; JSON is reserved for bounded versioned extensions, not opaque replacement of the domain model.
+
+CP3 adds normalized `research_sessions`, `research_questions`, `evidence`, `experiments`, `results`, `findings`, `decisions`, `requirements`, `research_session_items`, append-only `research_timeline`, and rebuildable `research_search_documents`. Database type guards and the typed application API prevent partial Research aggregates.
 
 ## 4. Identity and Ordering
 

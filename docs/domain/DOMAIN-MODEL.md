@@ -1,6 +1,6 @@
 # Continuum Domain Model
 
-> **Status:** Approved for CP2  
+> **Status:** Approved baseline; implemented through CP3
 > **Scope:** Canonical vocabulary, ownership, lifecycle, relationships, provenance, and invariants.
 
 ## 1. Common Envelope
@@ -166,3 +166,7 @@ Normal deletion archives or tombstones canonical metadata to preserve referentia
 ## 10. CP2 Minimum Domain Slice
 
 CP2 implements Project, SpaceCapability, generic entity envelope, Relationship, AuditEvent, Artifact metadata, Job, Checkpoint envelope, origin/authorship primitives, and lifecycle/version utilities. Research and Development aggregates are introduced by their owning checkpoints against these contracts.
+
+## 11. CP3 Implemented Research Slice
+
+CP3 implements normalized ResearchSession, ResearchQuestion, Evidence, Experiment, Result, Finding, Decision, and optional Requirement state against the common envelope. It registers the Research relationship matrix at the Core boundary, preserves source/interpretation separation, and adds deterministic research timeline, search, report, Checkpoint, resume, migration, and integrity behavior. Development aggregates and cross-Space validation feedback remain owned by CP4–CP6.

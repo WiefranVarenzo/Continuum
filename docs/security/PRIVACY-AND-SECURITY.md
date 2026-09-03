@@ -1,6 +1,6 @@
 # Continuum Privacy and Security Architecture
 
-> **Status:** Approved for CP2  
+> **Status:** Approved baseline; deterministic controls implemented through CP3
 > **Posture:** Local-first, least privilege, explicit external disclosure, untrusted inputs.
 
 ## 1. Trust Boundaries

@@ -1,10 +1,10 @@
 # Continuum
 
-This workspace contains the CP2 Continuity Core implementation derived from the approved CP1 architecture.
+This workspace contains the CP2 Continuity Core and CP3 Research Core implementations derived from the approved CP1 architecture.
 
-The implementation is intentionally narrow: durable project identity, SQLite Project Ledger, generic entities and typed relationships, append-only audit/outbox records, optional Space capability state, content-addressed artifacts, immutable checkpoint envelopes, durable jobs, integrity diagnostics, and verified export/import.
+The implementation includes durable project identity, SQLite Project Ledger, typed relationships, append-only audit/outbox records, optional Space capability state, content-addressed artifacts, immutable checkpoints, durable jobs, integrity diagnostics, verified export/import, and the deterministic ResearchSession → Question/Evidence/Experiment/Result/Finding/Decision workflow.
 
-Research aggregates begin in CP3. Repository intelligence, semantic AI, capture, Context Pack selection, and MCP remain deferred to their owning checkpoints.
+Research-only work can now be paused, resumed, searched, reported, exported, and restored without a repository or AI. Repository intelligence, semantic AI, capture acquisition, semantic Context Pack selection, and MCP remain deferred to their owning checkpoints.
 
 ## Verify
 
@@ -14,5 +14,4 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-The library is located at `crates/continuum-core` and integration tests map directly to the CP2 handoff and core-data acceptance criteria.
-
+The library is located at `crates/continuum-core`. CP2 and CP3 validation evidence lives in `docs/cp2/` and `docs/cp3/`.

@@ -22,14 +22,15 @@ use crate::{
 
 const MIGRATION_1: &str = include_str!("../migrations/0001_core.sql");
 const MIGRATION_2: &str = include_str!("../migrations/0002_contract_alignment.sql");
+const MIGRATION_3: &str = include_str!("../migrations/0003_research_core.sql");
 const MAX_ACTIVE_JOBS: i64 = 1_000;
 const MAX_ENTITY_JSON_BYTES: usize = 1024 * 1024;
 const MAX_CHECKPOINT_JSON_BYTES: usize = 2 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct ContinuityStore {
-    root: PathBuf,
-    manifest: ProjectManifest,
+    pub(crate) root: PathBuf,
+    pub(crate) manifest: ProjectManifest,
 }
 
 impl ContinuityStore {
@@ -305,6 +306,12 @@ impl ContinuityStore {
     ) -> Result<String> {
         validate_command_context(command)?;
         validate_nonempty(&input.entity_type, 100, "entity_type")?;
+        if crate::research::is_reserved_domain_entity_type(&input.entity_type) {
+            return Err(CoreError::Validation(format!(
+                "{} is owned by a typed domain module; use its typed command API",
+                input.entity_type
+            )));
+        }
         validate_nonempty(&input.title, 500, "title")?;
         if input.schema_version == 0 {
             return Err(CoreError::Validation(
@@ -466,6 +473,12 @@ impl ContinuityStore {
         update: EntityUpdate,
     ) -> Result<Entity> {
         validate_command_context(command)?;
+        let existing_type = self.get_entity(entity_id)?.entity_type;
+        if crate::research::is_reserved_domain_entity_type(&existing_type) {
+            return Err(CoreError::Validation(format!(
+                "{existing_type} is owned by a typed domain module; use its typed command API"
+            )));
+        }
         validate_nonempty(&update.title, 500, "title")?;
         validate_nonempty(&update.status, 50, "status")?;
         let metadata_json =
@@ -638,6 +651,11 @@ impl ContinuityStore {
         policy
             .validate_pair(&source_type, &input.relation_type, &target_type)
             .map_err(CoreError::Validation)?;
+        crate::research::validate_registered_relationship_pair(
+            &source_type,
+            &input.relation_type,
+            &target_type,
+        )?;
         for source_id in &input.direct_source_ids {
             entity_type_in_project(&tx, &self.manifest.project_id, source_id)?;
         }
@@ -1873,6 +1891,11 @@ impl ContinuityStore {
                 });
             }
         }
+        crate::research::append_research_integrity_issues(
+            &connection,
+            &self.manifest.project_id,
+            &mut report,
+        )?;
         Ok(report)
     }
 
@@ -1956,7 +1979,7 @@ impl ContinuityStore {
         self.connection()
     }
 
-    fn connection(&self) -> Result<Connection> {
+    pub(crate) fn connection(&self) -> Result<Connection> {
         open_connection(&self.manifest.ledger_path(&self.root))
     }
 }
@@ -1985,6 +2008,7 @@ fn apply_migrations(connection: &mut Connection) -> Result<()> {
     let migrations = [
         (1_u32, "core", MIGRATION_1),
         (2_u32, "contract_alignment", MIGRATION_2),
+        (3_u32, "research_core", MIGRATION_3),
     ];
     for (version, name, sql) in migrations {
         let checksum = hex::encode(Sha256::digest(sql.as_bytes()));
@@ -2070,7 +2094,7 @@ fn backup_connection(source: &Connection, destination: &Path) -> Result<()> {
     Ok(())
 }
 
-fn prior_result(
+pub(crate) fn prior_result(
     tx: &Transaction<'_>,
     project_id: &str,
     command: &CommandContext,
@@ -2102,7 +2126,7 @@ fn prior_result(
     }
 }
 
-fn record_command_with_context(
+pub(crate) fn record_command_with_context(
     tx: &Transaction<'_>,
     command: &CommandContext,
     project_id: &str,
@@ -2140,7 +2164,7 @@ fn record_command_with_context(
     Ok(())
 }
 
-fn append_event_with_context(
+pub(crate) fn append_event_with_context(
     tx: &Transaction<'_>,
     project_id: &str,
     command: &CommandContext,
@@ -2197,7 +2221,7 @@ fn append_event_with_context(
     Ok(sequence)
 }
 
-fn validate_command_context(command: &CommandContext) -> Result<()> {
+pub(crate) fn validate_command_context(command: &CommandContext) -> Result<()> {
     validate_id(&command.command_id, "command_id")?;
     validate_id(&command.correlation_id, "correlation_id")?;
     if let Some(causation_id) = &command.causation_id {
@@ -2220,7 +2244,7 @@ fn validate_command_context(command: &CommandContext) -> Result<()> {
     Ok(())
 }
 
-fn legacy_origin(origin: OriginKind) -> &'static str {
+pub(crate) fn legacy_origin(origin: OriginKind) -> &'static str {
     match origin {
         OriginKind::User => "manual",
         OriginKind::Deterministic => "system",
@@ -2287,7 +2311,7 @@ fn read_outbox(connection: &Connection, project_id: &str, id: &str) -> Result<Ou
         .map_err(Into::into)
 }
 
-fn bounded_json(value: &Value, max_bytes: usize, label: &str) -> Result<String> {
+pub(crate) fn bounded_json(value: &Value, max_bytes: usize, label: &str) -> Result<String> {
     let encoded = serde_json::to_string(value)?;
     if encoded.len() > max_bytes {
         return Err(CoreError::Validation(format!(
@@ -2297,7 +2321,7 @@ fn bounded_json(value: &Value, max_bytes: usize, label: &str) -> Result<String> 
     Ok(encoded)
 }
 
-fn validate_id(value: &str, label: &str) -> Result<()> {
+pub(crate) fn validate_id(value: &str, label: &str) -> Result<()> {
     let parsed = uuid::Uuid::parse_str(value)
         .map_err(|_| CoreError::Validation(format!("{label} must be a UUID")))?;
     if parsed.get_version_num() != 7 {
@@ -2306,7 +2330,7 @@ fn validate_id(value: &str, label: &str) -> Result<()> {
     Ok(())
 }
 
-fn validate_nonempty(value: &str, max_chars: usize, label: &str) -> Result<()> {
+pub(crate) fn validate_nonempty(value: &str, max_chars: usize, label: &str) -> Result<()> {
     let length = value.trim().chars().count();
     if length == 0 || length > max_chars {
         return Err(CoreError::Validation(format!(
@@ -2428,7 +2452,7 @@ mod tests {
     }
 
     #[test]
-    fn v1_project_is_backed_up_and_migrated_losslessly_to_v2() {
+    fn v1_project_is_backed_up_and_migrated_losslessly_to_current_schema() {
         let directory = tempfile::tempdir().unwrap();
         let root = directory.path().join("legacy-project");
         fs::create_dir_all(&root).unwrap();
@@ -2497,8 +2521,72 @@ mod tests {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!(version, 2);
+        assert_eq!(version, CORE_SCHEMA_VERSION);
         let backups = fs::read_dir(root.join("backups")).unwrap().count();
         assert_eq!(backups, 1);
+    }
+
+    #[test]
+    fn v2_project_is_backed_up_and_gains_empty_research_schema_without_core_mutation() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("cp2-project");
+        fs::create_dir_all(&root).unwrap();
+        let project_id = new_id();
+        let entity_id = new_id();
+        let manifest = ProjectManifest::new(project_id.clone(), "CP2 fixture".into());
+        manifest.write_atomic(&root).unwrap();
+        let mut connection = open_connection(&manifest.ledger_path(&root)).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE schema_migrations(
+                    version INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    checksum TEXT NOT NULL,
+                    applied_at TEXT NOT NULL
+                );",
+            )
+            .unwrap();
+        for (version, name, sql) in [
+            (1_u32, "core", MIGRATION_1),
+            (2_u32, "contract_alignment", MIGRATION_2),
+        ] {
+            let checksum = hex::encode(Sha256::digest(sql.as_bytes()));
+            apply_single_migration(&mut connection, version, name, sql, &checksum).unwrap();
+        }
+        let now = Utc::now().to_rfc3339();
+        connection.execute("INSERT INTO projects(id,name,status,lifecycle_version,ledger_sequence,created_at,updated_at)
+            VALUES(?1,'CP2 fixture','active',1,0,?2,?2)",params![project_id,now]).unwrap();
+        connection
+            .execute(
+                "INSERT INTO space_capabilities(project_id,space,enabled,updated_at)
+            VALUES(?1,'research',0,?2),(?1,'development',0,?2)",
+                params![project_id, now],
+            )
+            .unwrap();
+        connection.execute("INSERT INTO entities(id,project_id,entity_type,title,status,version,legacy_origin,data_json,
+            created_at,updated_at,entity_schema_version,origin_type,metadata_json,created_by,updated_by)
+            VALUES(?1,?2,'core.fixture','Preserved core state','active',1,'manual','{}',?3,?3,1,'user','{}','owner','owner')",
+            params![entity_id,project_id,now]).unwrap();
+        drop(connection);
+
+        let store = ContinuityStore::open(&root).unwrap();
+        assert_eq!(
+            store.get_entity(&entity_id).unwrap().title,
+            "Preserved core state"
+        );
+        let connection = store.debug_connection().unwrap();
+        let version: u32 = connection
+            .query_row("SELECT max(version) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(version, CORE_SCHEMA_VERSION);
+        let research_rows: i64 = connection
+            .query_row("SELECT count(*) FROM research_questions", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(research_rows, 0);
+        assert_eq!(fs::read_dir(root.join("backups")).unwrap().count(), 1);
     }
 }

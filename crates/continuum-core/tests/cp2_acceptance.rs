@@ -2,9 +2,9 @@ use std::fs;
 use std::time::Duration;
 
 use continuum_core::{
-    ActorKind, ActorRef, ArtifactClassification, CheckpointScope, CommandContext, ContinuityStore,
-    CoreError, EntityUpdate, NewEntity, NewRelationship, OriginKind, PageRequest,
-    RelationshipPolicy, RelationshipReviewState, Space, new_id,
+    ActorKind, ActorRef, ArtifactClassification, CORE_SCHEMA_VERSION, CheckpointScope,
+    CommandContext, ContinuityStore, CoreError, EntityUpdate, NewEntity, NewRelationship,
+    OriginKind, PageRequest, RelationshipPolicy, RelationshipReviewState, Space, new_id,
 };
 use rusqlite::params;
 use serde_json::json;
@@ -49,7 +49,7 @@ fn project_bootstrap_is_local_isolated_and_migrated() {
             row.get(0)
         })
         .unwrap();
-    assert_eq!(version, 2);
+    assert_eq!(version, i64::from(CORE_SCHEMA_VERSION));
     let placeholder_count: i64 = connection
         .query_row("SELECT count(*) FROM entities", [], |row| row.get(0))
         .unwrap();
