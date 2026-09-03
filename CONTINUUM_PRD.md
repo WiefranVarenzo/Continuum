@@ -1,10 +1,10 @@
 # Continuum - Product Requirements Document
 
-> **Status:** Approved product baseline; implementation validated through CP3
-> **Version:** 1.2.0
+> **Status:** Approved product baseline; implementation validated through CP4
+> **Version:** 1.3.0
 > **Last updated:** 2026-09-03
 > **Primary source of truth:** This Markdown document  
-> **Product stage:** CP3 PASS - Ready for CP4 Development Core
+> **Product stage:** CP4 PASS - Ready for CP5 Code Intelligence
 > **Change policy:** Material changes to product direction, domain boundaries, privacy posture, or checkpoint scope require an explicit decision record (ADR) and an update to this PRD.
 > **Related decisions:** [ADR-001 - Modular Spaces and Optional R&D Bridge](docs/adr/ADR-001-MODULAR-SPACES-AND-OPTIONAL-RD-BRIDGE.md); [ADR-006 - Provider-Neutral AI and MCP Boundaries](docs/adr/ADR-006-PROVIDER-NEUTRAL-AI-AND-MCP-BOUNDARIES.md)
 
@@ -810,6 +810,8 @@ Deliverables:
 Exit: a user can complete, pause, resume, and report a research cycle without AI, repository, or Development Space dependency and audit every material transition.
 
 ### CP4 - Development Core
+
+Status: **PASS (validated 2026-09-03).** Architecture, implementation, migration, traceability, acceptance, real-Git fixtures, benchmark, and validation evidence are recorded in `docs/cp4/`.
 
 Purpose: connect repository history to Continuum.
 

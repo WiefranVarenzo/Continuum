@@ -1,6 +1,6 @@
 # Continuum Privacy and Security Architecture
 
-> **Status:** Approved baseline; provider/MCP amendment accepted 2026-09-03; deterministic controls implemented through CP3
+> **Status:** Approved baseline; provider/MCP amendment accepted 2026-09-03; deterministic controls implemented through CP4
 > **Posture:** Local-first, least privilege, explicit external disclosure, untrusted inputs.
 
 ## 1. Trust Boundaries
@@ -39,6 +39,8 @@ Controls: default-private classification, secret scanning, transitive deny, prov
 ### Prompt injection in Evidence/repository
 
 Controls: retrieved material labelled as untrusted data, instruction/data separation, no model tools with ambient authority, schema validation, source-ID validation, and human review.
+
+CP4 additionally invokes Git through direct argument vectors without a shell, closes stdin, removes external-diff environment overrides, disables optional locks/filesystem monitors for observation, rejects repository-local executable clean/smudge/process filters and diff/text-conversion drivers, bounds stdout/stderr, enforces a deadline, rejects malformed/non-UTF-8 repository coordinates, and never executes repository content. Commit messages and paths remain untrusted display data.
 
 ### Malicious path/archive/symlink
 
@@ -92,4 +94,4 @@ Windows 11 capture uses OS-supported screen capture and WASAPI-class audio adapt
 
 ## 8. Security Acceptance
 
-CP2 must pass transaction, artifact, import-path, credential-location, and diagnostic-redaction tests. Later owning checkpoints add prompt-injection, capture-consent, provider-routing/failover/conformance, analyzer, and MCP cross-project/revocation/authorization suites before their features ship.
+CP2 passes transaction, artifact, import-path, credential-location, and diagnostic foundations. CP4 passes canonical-path, direct Git invocation, bounded-output/deadline, immutable-observation, rewrite, and repository-drift foundations. Later owning checkpoints add prompt-injection, capture-consent, provider-routing/failover/conformance, analyzer, and MCP cross-project/revocation/authorization suites before their features ship.

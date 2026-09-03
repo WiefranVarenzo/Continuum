@@ -351,7 +351,7 @@ pub(crate) fn validate_registered_relationship_pair(
     relation: &str,
     target: &str,
 ) -> Result<()> {
-    let declared_future_pair = matches!(
+    let declared_cross_space_pair = matches!(
         (source, relation, target),
         (
             "change_set",
@@ -364,7 +364,7 @@ pub(crate) fn validate_registered_relationship_pair(
                 "evidence" | "finding" | "decision" | "requirement"
             )
     );
-    if declared_future_pair {
+    if declared_cross_space_pair {
         return Ok(());
     }
     let strict_research_endpoint = |value: &str| {
@@ -1036,11 +1036,24 @@ impl ContinuityStore {
             event_details:json!({"decision_id":input.decision_id,"rationale_origin":input.rationale_origin.as_str()}),
         },|tx,id|{
             let criteria=bounded_json(&json!(input.acceptance_criteria),MAX_RESEARCH_JSON_BYTES,"acceptance criteria")?;
-            tx.execute("INSERT INTO requirements(entity_id,statement,acceptance_criteria_json,priority,rationale_origin,verification_method)
-                        VALUES(?1,?2,?3,?4,?5,?6)",params![id,input.statement,criteria,input.priority,
+            tx.execute("INSERT INTO requirements(entity_id,statement,acceptance_criteria_json,priority,rationale_origin,verification_method,created_in_space)
+                        VALUES(?1,?2,?3,?4,?5,?6,'research')",params![id,input.statement,criteria,input.priority,
                         input.rationale_origin.as_str(),input.verification_method])?;
             if let Some(decision_id)=&input.decision_id {
                 require_entity_type(tx,&self.manifest.project_id,decision_id,"decision")?;
+                if input.rationale_origin == RequirementRationaleOrigin::Research {
+                    let status = research_entity_status(
+                        tx,
+                        &self.manifest.project_id,
+                        decision_id,
+                        "decision",
+                    )?;
+                    if status != "accepted" {
+                        return Err(CoreError::Validation(
+                            "research-origin Requirement requires an accepted Decision".into(),
+                        ));
+                    }
+                }
                 insert_relationship(tx,&self.manifest.project_id,command,decision_id,"decision",id,"requirement","creates",origin,
                     std::slice::from_ref(decision_id))?;
             }
@@ -1538,9 +1551,11 @@ impl ContinuityStore {
             tx.commit()?;
             return self.get_checkpoint(&id);
         }
-        let mut statement=tx.prepare("SELECT id,entity_type,status,version FROM entities WHERE project_id=?1
-            AND entity_type IN ('research_session','research_question','evidence','experiment','result','finding','decision','requirement')
-            AND status<>'archived' ORDER BY entity_type,created_at,id")?;
+        let mut statement=tx.prepare("SELECT e.id,e.entity_type,e.status,e.version FROM entities e
+            LEFT JOIN requirements req ON req.entity_id=e.id WHERE e.project_id=?1
+            AND (e.entity_type IN ('research_session','research_question','evidence','experiment','result','finding','decision')
+                 OR (e.entity_type='requirement' AND req.created_in_space='research'))
+            AND e.status<>'archived' ORDER BY e.entity_type,e.created_at,e.id")?;
         let records = statement
             .query_map([&self.manifest.project_id], |row| {
                 Ok((
@@ -1670,9 +1685,11 @@ impl ContinuityStore {
             [&self.manifest.project_id],
             |row| row.get(0),
         )?;
-        let mut statement=connection.prepare("SELECT id,entity_type,title,status FROM entities WHERE project_id=?1
-            AND entity_type IN ('research_session','research_question','evidence','experiment','result','finding','decision','requirement')
-            AND status<>'archived' ORDER BY entity_type,created_at,id LIMIT 5001")?;
+        let mut statement=connection.prepare("SELECT e.id,e.entity_type,e.title,e.status FROM entities e
+            LEFT JOIN requirements req ON req.entity_id=e.id WHERE e.project_id=?1
+            AND (e.entity_type IN ('research_session','research_question','evidence','experiment','result','finding','decision')
+                 OR (e.entity_type='requirement' AND req.created_in_space='research'))
+            AND e.status<>'archived' ORDER BY e.entity_type,e.created_at,e.id LIMIT 5001")?;
         let rows = statement
             .query_map([&self.manifest.project_id], |row| {
                 Ok((
@@ -2196,7 +2213,8 @@ fn unresolved_research_hits(
         (e.entity_type='experiment' AND e.status IN ('planned','running','failed')) OR
         (e.entity_type='finding' AND e.status IN ('candidate','challenged')) OR
         (e.entity_type='decision' AND e.status='proposed') OR
-        (e.entity_type='requirement' AND e.status IN ('draft','accepted','in_progress','blocked','implemented'))
+        (e.entity_type='requirement' AND e.status IN ('draft','accepted','in_progress','blocked','implemented')
+          AND EXISTS(SELECT 1 FROM requirements req WHERE req.entity_id=e.id AND req.created_in_space='research'))
     )";
     let count_sql =
         format!("SELECT count(*) FROM entities e WHERE e.project_id=?1 AND {predicate}");
@@ -2400,7 +2418,10 @@ pub(crate) fn append_research_integrity_issues(
         }
     }
     let mut statement=connection.prepare("SELECT e.id FROM entities e LEFT JOIN research_search_documents d ON d.entity_id=e.id
-        WHERE e.project_id=?1 AND e.entity_type IN ('research_session','research_question','evidence','experiment','result','finding','decision','requirement')
+        LEFT JOIN requirements req ON req.entity_id=e.id
+        WHERE e.project_id=?1
+        AND (e.entity_type IN ('research_session','research_question','evidence','experiment','result','finding','decision')
+             OR (e.entity_type='requirement' AND req.created_in_space='research'))
         AND d.entity_id IS NULL")?;
     let ids = statement
         .query_map([project_id], |row| row.get::<_, String>(0))?

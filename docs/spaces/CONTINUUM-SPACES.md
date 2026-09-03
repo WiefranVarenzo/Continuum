@@ -1,6 +1,6 @@
 # Continuum Spaces and R&D Bridge
 
-> **Status:** Approved baseline; Research Space implemented through CP3
+> **Status:** Approved baseline; Research Space implemented through CP3; Development Core implemented through CP4
 > **Governing decision:** [ADR-001](../adr/ADR-001-MODULAR-SPACES-AND-OPTIONAL-RD-BRIDGE.md)
 
 ## 1. Capability Model
@@ -31,6 +31,8 @@ Research Space depends only on Continuity Core ports for identity, persistence, 
 Inputs include repository state and manual/imported/external/legacy intent such as a Requirement, issue, brief, task, or Decision. Outputs include ChangeSets, CodeEntities, dependency/configuration observations, Tests, TestRuns, validation, development documentation, Development Checkpoints, and Development Context Packs.
 
 Development Space never claims evidence-backed rationale unless linked sources exist. Unknown rationale remains explicit. Repository observation is read-only by default; Continuum does not rewrite Git history.
+
+CP4 implements this contract through stable Repository identity, immutable baselines and commit/diff observations, shared Requirements, ChangeSets, Development Checkpoints, divergence-aware resume, and deterministic documentation. CP5 extends the same Space with structural CodeEntity, dependency/configuration, Test, and TestRun intelligence.
 
 ## 4. R&D Bridge Contract
 

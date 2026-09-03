@@ -1,6 +1,6 @@
 # Continuum Domain Model
 
-> **Status:** Approved baseline; provider/MCP provenance amendment accepted 2026-09-03; implemented through CP3
+> **Status:** Approved baseline; provider/MCP provenance amendment accepted 2026-09-03; implemented through CP4
 > **Scope:** Canonical vocabulary, ownership, lifecycle, relationships, provenance, and invariants.
 
 ## 1. Common Envelope
@@ -173,3 +173,7 @@ CP2 implements Project, SpaceCapability, generic entity envelope, Relationship, 
 ## 11. CP3 Implemented Research Slice
 
 CP3 implements normalized ResearchSession, ResearchQuestion, Evidence, Experiment, Result, Finding, Decision, and optional Requirement state against the common envelope. It registers the Research relationship matrix at the Core boundary, preserves source/interpretation separation, and adds deterministic research timeline, search, report, Checkpoint, resume, migration, and integrity behavior. Development aggregates and cross-Space validation feedback remain owned by CP4–CP6.
+
+## 12. CP4 Implemented Development Slice
+
+CP4 implements Repository attachment/relocation, immutable RepositoryBaseline and CommitObservation state, ordered file-diff observations, rewrite reconciliation, Development-created shared Requirements, working-tree and committed ChangeSets, explicit Requirement implementation and ChangeSet supersession links, Development timeline/search, Checkpoint/resume/report, migration, export/restore, and integrity behavior. CodeEntity, dependency/configuration, Test, and TestRun observations remain CP5-owned.

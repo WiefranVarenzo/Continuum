@@ -12,7 +12,7 @@
 
 - PRV-01–PRV-07 → Domain Sections 1, 4–9; AI Sections 4–6; Checkpoint Sections 2–9 → provenance graph fixture, invalid-source and staleness review.
 - FR-RS-001–014 → Domain Research ownership/lifecycles; Spaces Section 2 → Fixture A; CP3 implementation tests.
-- FR-DS-001–015 → Domain Development ownership/lifecycles; Spaces Section 3; Data Section 7 → Fixture B; CP4–CP5 tests.
+- FR-DS-001–015 → Domain Development ownership/lifecycles; Spaces Section 3; Data Section 7 → CP4 Repository/ChangeSet evidence and CP5 structural-analysis extensions.
 - FR-BRIDGE-001–006 → ADR-001; Spaces Sections 4–6; Domain relationship model → Fixture C; CP6 tests.
 - FR-KG-001–006 → Domain relationship/provenance; Architecture adapter boundary; Diagram 5 → CP6 graph validation tests.
 
@@ -55,7 +55,7 @@
 - AC-CP1-01–12 → CP1 Validation and Acceptance Checklist.
 - AC-DATA-01–05 → CP2.
 - AC-RS-01–06 → CP3.
-- AC-DS-01–06 → CP4–CP5.
+- AC-DS-01/03/05/06 → CP4; AC-DS-02/04 completed with CP5 analyzer/Test extensions.
 - AC-BRIDGE-01–04 → CP6.
 - AC-AI-01–08 → CP7.
 - AC-MCP-01–06 → CP11.

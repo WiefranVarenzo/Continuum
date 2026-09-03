@@ -34,6 +34,7 @@ Continuum remains a local-first deterministic R&D continuity system. It becomes 
 
 ### CP4 — Development Core
 
+- status: implemented and validated without provider or MCP coupling;
 - preserve stable repository, baseline, commit, diff, and ChangeSet source coordinates;
 - do not bind change explanations or external clients into Development domain logic;
 - expose bounded queries that CP7 and CP11 may consume later.

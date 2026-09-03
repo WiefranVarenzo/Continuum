@@ -1,0 +1,47 @@
+{
+  "arch": "x86_64",
+  "benchmark_version": 1,
+  "build": "0.4.0",
+  "correctness": "100 new commits and file diffs ingested exactly once; ChangeSet created; final integrity scan healthy",
+  "cpu": "AMD Ryzen 5 5600H with Radeon Graphics",
+  "fixture": {
+    "change_set_commits": 100,
+    "changed_files_per_commit": 1,
+    "initial_commits": 1,
+    "name": "incremental-git-100-v1",
+    "new_commits": 100
+  },
+  "git_version": "git version 2.55.0",
+  "memory": "15745628 kB",
+  "milliseconds": {
+    "checkpoint_load": {
+      "max": 3.312835,
+      "p50": 2.077375,
+      "p95": 2.862104
+    },
+    "create_100_commit_change_set": 1522.342351,
+    "deterministic_development_report": {
+      "max": 11.075466,
+      "p50": 7.139337,
+      "p95": 9.036443
+    },
+    "development_resume_state": {
+      "max": 94.537538,
+      "p50": 92.647796,
+      "p95": 93.989835
+    },
+    "incremental_git_ingestion_100_commits": 1108.5700430000002
+  },
+  "os": "linux",
+  "protocol": {
+    "network_included": false,
+    "samples": 30,
+    "warmups": 5
+  },
+  "targets_ms": {
+    "checkpoint_load": 1000,
+    "deterministic_development_report": 3000,
+    "development_resume_state": 1000,
+    "incremental_git_ingestion_100_commits": 60000
+  }
+}

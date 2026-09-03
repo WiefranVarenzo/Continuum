@@ -23,6 +23,7 @@ use crate::{
 const MIGRATION_1: &str = include_str!("../migrations/0001_core.sql");
 const MIGRATION_2: &str = include_str!("../migrations/0002_contract_alignment.sql");
 const MIGRATION_3: &str = include_str!("../migrations/0003_research_core.sql");
+const MIGRATION_4: &str = include_str!("../migrations/0004_development_core.sql");
 const MAX_ACTIVE_JOBS: i64 = 1_000;
 const MAX_ENTITY_JSON_BYTES: usize = 1024 * 1024;
 const MAX_CHECKPOINT_JSON_BYTES: usize = 2 * 1024 * 1024;
@@ -306,7 +307,9 @@ impl ContinuityStore {
     ) -> Result<String> {
         validate_command_context(command)?;
         validate_nonempty(&input.entity_type, 100, "entity_type")?;
-        if crate::research::is_reserved_domain_entity_type(&input.entity_type) {
+        if crate::research::is_reserved_domain_entity_type(&input.entity_type)
+            || crate::development::is_development_entity_type(&input.entity_type)
+        {
             return Err(CoreError::Validation(format!(
                 "{} is owned by a typed domain module; use its typed command API",
                 input.entity_type
@@ -474,7 +477,9 @@ impl ContinuityStore {
     ) -> Result<Entity> {
         validate_command_context(command)?;
         let existing_type = self.get_entity(entity_id)?.entity_type;
-        if crate::research::is_reserved_domain_entity_type(&existing_type) {
+        if crate::research::is_reserved_domain_entity_type(&existing_type)
+            || crate::development::is_development_entity_type(&existing_type)
+        {
             return Err(CoreError::Validation(format!(
                 "{existing_type} is owned by a typed domain module; use its typed command API"
             )));
@@ -652,6 +657,11 @@ impl ContinuityStore {
             .validate_pair(&source_type, &input.relation_type, &target_type)
             .map_err(CoreError::Validation)?;
         crate::research::validate_registered_relationship_pair(
+            &source_type,
+            &input.relation_type,
+            &target_type,
+        )?;
+        crate::development::validate_development_relationship_pair(
             &source_type,
             &input.relation_type,
             &target_type,
@@ -1896,6 +1906,11 @@ impl ContinuityStore {
             &self.manifest.project_id,
             &mut report,
         )?;
+        crate::development::append_development_integrity_issues(
+            &connection,
+            &self.manifest.project_id,
+            &mut report,
+        )?;
         Ok(report)
     }
 
@@ -2009,6 +2024,7 @@ fn apply_migrations(connection: &mut Connection) -> Result<()> {
         (1_u32, "core", MIGRATION_1),
         (2_u32, "contract_alignment", MIGRATION_2),
         (3_u32, "research_core", MIGRATION_3),
+        (4_u32, "development_core", MIGRATION_4),
     ];
     for (version, name, sql) in migrations {
         let checksum = hex::encode(Sha256::digest(sql.as_bytes()));
@@ -2587,6 +2603,87 @@ mod tests {
             })
             .unwrap();
         assert_eq!(research_rows, 0);
+        assert_eq!(fs::read_dir(root.join("backups")).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn v3_project_is_backed_up_and_gains_development_schema_without_rewriting_research() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("cp3-project");
+        fs::create_dir_all(&root).unwrap();
+        let project_id = new_id();
+        let requirement_id = new_id();
+        let manifest = ProjectManifest::new(project_id.clone(), "CP3 fixture".into());
+        manifest.write_atomic(&root).unwrap();
+        let mut connection = open_connection(&manifest.ledger_path(&root)).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE schema_migrations(
+                    version INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    checksum TEXT NOT NULL,
+                    applied_at TEXT NOT NULL
+                );",
+            )
+            .unwrap();
+        for (version, name, sql) in [
+            (1_u32, "core", MIGRATION_1),
+            (2_u32, "contract_alignment", MIGRATION_2),
+            (3_u32, "research_core", MIGRATION_3),
+        ] {
+            let checksum = hex::encode(Sha256::digest(sql.as_bytes()));
+            apply_single_migration(&mut connection, version, name, sql, &checksum).unwrap();
+        }
+        let now = Utc::now().to_rfc3339();
+        connection
+            .execute(
+                "INSERT INTO projects(id,name,status,lifecycle_version,ledger_sequence,created_at,updated_at)
+                 VALUES(?1,'CP3 fixture','active',1,0,?2,?2)",
+                params![project_id, now],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO space_capabilities(project_id,space,enabled,updated_at)
+            VALUES(?1,'research',1,?2),(?1,'development',0,?2)",
+                params![project_id, now],
+            )
+            .unwrap();
+        connection.execute("INSERT INTO entities(id,project_id,entity_type,title,status,version,legacy_origin,data_json,
+            created_at,updated_at,entity_schema_version,origin_type,metadata_json,created_by,updated_by)
+            VALUES(?1,?2,'requirement','Preserved requirement','draft',1,'manual','{}',?3,?3,1,'user','{}','owner','owner')",
+            params![requirement_id,project_id,now]).unwrap();
+        connection.execute("INSERT INTO requirements(entity_id,statement,acceptance_criteria_json,priority,rationale_origin,verification_method)
+            VALUES(?1,'Preserve CP3 identity','[]',2,'user','inspect')",[&requirement_id]).unwrap();
+        connection.execute("INSERT INTO research_search_documents(entity_id,project_id,entity_type,title,body,updated_at)
+            VALUES(?1,?2,'requirement','Preserved requirement','Preserve CP3 identity',?3)",
+            params![requirement_id,project_id,now]).unwrap();
+        drop(connection);
+
+        let store = ContinuityStore::open(&root).unwrap();
+        assert_eq!(
+            store.get_entity(&requirement_id).unwrap().title,
+            "Preserved requirement"
+        );
+        let connection = store.debug_connection().unwrap();
+        let version: u32 = connection
+            .query_row("SELECT max(version) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(version, CORE_SCHEMA_VERSION);
+        let created_in_space: String = connection
+            .query_row(
+                "SELECT created_in_space FROM requirements WHERE entity_id=?1",
+                [&requirement_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(created_in_space, "research");
+        let repository_rows: i64 = connection
+            .query_row("SELECT count(*) FROM repositories", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(repository_rows, 0);
         assert_eq!(fs::read_dir(root.join("backups")).unwrap().count(), 1);
     }
 }
