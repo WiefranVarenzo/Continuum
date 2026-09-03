@@ -52,4 +52,4 @@ crates/continuum-core/
 
 ## Explicit Non-Claims
 
-CP3 does not claim Gemini integration, semantic search, repository ingestion, ChangeSets, code analysis, capture acquisition, polished report UI, full Context Pack selection, MCP, Windows certification, or release hardening. Those remain assigned to CP4–CP12.
+CP3 does not claim provider-neutral AI integration, semantic search, repository ingestion, ChangeSets, code analysis, capture acquisition, polished report UI, full Context Pack selection, MCP, Windows certification, or release hardening. Those remain assigned to CP4–CP12 under the ADR-006 amendment.

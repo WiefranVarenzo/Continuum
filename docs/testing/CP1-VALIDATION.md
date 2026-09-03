@@ -1,7 +1,8 @@
 # CP1 Architecture Validation
 
-> **Result:** PASS  
+> **Result:** PASS; provider/MCP amendment validated 2026-09-03
 > **Validated:** 2026-08-31  
+> **Amendment validated:** 2026-09-03
 > **Scope:** Design completeness and readiness to begin CP2, not production implementation.
 
 ## 1. Validation Method
@@ -17,6 +18,7 @@ The CP1 pack was reviewed against the PRD, ADRs, three usage configurations, fiv
 - Spaces/R&D Bridge: present.
 - Data Architecture: present.
 - AI Architecture: present.
+- MCP Continuity Interface and provider/MCP delivery plan: present.
 - Checkpoint/Context Architecture: present.
 - Privacy/Security: present.
 - Performance Budget: present.
@@ -55,7 +57,8 @@ Classification, transitive deny, prompt-injection isolation, path controls, boun
 - canonical store agrees: SQLite metadata/state plus content-addressed payloads.
 - event model agrees: current state plus audit events/outbox, not full event sourcing.
 - identity agrees: UUIDv7 and project ledger sequence; SHA-256 for content.
-- AI agrees: Gemini behind gateway, candidate-only, human authority.
+- AI agrees: provider-neutral AI Provider Gateway, candidate-only, human authority; Gemini is an adapter, not a domain dependency.
+- external AI agrees: inbound Continuum MCP Server is separate from outbound provider APIs, project-scoped, read-first, and proposal-based.
 - modular usage agrees across PRD, ADR, Spaces, Domain, diagrams, and acceptance.
 - Checkpoint agrees: non-terminal, immutable, scope-aware.
 - CP2 scope agrees: Core foundations only.
@@ -67,12 +70,12 @@ Result: PASS.
 
 - AC-CP1-01 entity/relationship definition and ownership: PASS via Domain Model.
 - AC-CP1-02 architecture/data-flow/deployment diagrams agree: PASS via Architecture Master and Core Diagrams.
-- AC-CP1-03 architectural command/query/event/artifact/job/error/AI/checkpoint/context contracts: PASS at CP1 abstraction.
-- AC-CP1-04 no ambiguous AI canonical authority: PASS via ADR-004 and AI Architecture.
+- AC-CP1-03 architectural command/query/event/artifact/job/error/AI/MCP/checkpoint/context contracts: PASS at CP1 abstraction.
+- AC-CP1-04 no ambiguous AI canonical authority: PASS via ADR-004, ADR-006, AI Architecture, and MCP Continuity Interface.
 - AC-CP1-05 named threat coverage: PASS via Privacy and Security.
 - AC-CP1-06 benchmark fixtures/protocol: PASS via Performance Budget.
 - AC-CP1-07 decisions explicit: PASS via Decision Register and ADRs.
-- AC-CP1-08 requirement ownership/verification: PASS via Traceability.
+- AC-CP1-08 requirement ownership/verification, including FR-AI-001–015 and FR-ACI-001–010: PASS via Traceability.
 - AC-CP1-09 independent Spaces: PASS via Fixtures A/B.
 - AC-CP1-10 optional auditable bridge/late activation: PASS via ADR-001 and Fixture C.
 - AC-CP1-11 shared/scope-specific Checkpoint schema: PASS via ADR-005 and Checkpoint Architecture.
@@ -81,12 +84,14 @@ Result: PASS.
 ## 6. Residual Risks Accepted for CP2
 
 - Windows/Linux capture implementation remains CP9 work.
-- exact Gemini deployment configuration remains CP7 work.
+- exact provider/model profiles and routing defaults remain CP7 work.
 - embeddings remain deferred to CP10 and off by default.
-- exact MCP tool catalog remains CP11 work.
+- exact MCP resource/prompt/tool catalog, client matrix, and optional remote transport remain CP11 work.
 - application-level encryption at rest is deferred; MVP relies on OS/disk security and documents this limitation.
 
 These do not block CP2 because its contract exposes adapters and enforces the relevant invariants without implementing those capabilities.
+
+ADR-006 introduces no schema or behavioral regression in CP2/CP3: their domains reject AI authority, use provider-independent origin/provenance envelopes, and do not require an external client. Result: PASS.
 
 ## 7. CP2 Entry Conditions
 

@@ -63,6 +63,7 @@ At soft limits, Continuum throttles workers, evicts rebuildable cache, reduces p
 - Context: tiered retrieval, hard budgets, streaming artifact excerpts, no whole-project prompt.
 - Capture: segmented media, bounded encoder queue, backpressure/quality adaptation.
 - AI: bounded candidate sets and concurrency; cache by source/version; provider time excluded.
+- MCP: local stdio reads reuse bounded application queries; p95 server overhead for Current Project State or an existing Checkpoint first page is ≤ 500 ms beyond the equivalent query, excluding external-client/model latency.
 
 ## 7. Release Gate
 

@@ -1,6 +1,6 @@
 # Continuum Domain Model
 
-> **Status:** Approved baseline; implemented through CP3
+> **Status:** Approved baseline; provider/MCP provenance amendment accepted 2026-09-03; implemented through CP3
 > **Scope:** Canonical vocabulary, ownership, lifecycle, relationships, provenance, and invariants.
 
 ## 1. Common Envelope
@@ -22,7 +22,7 @@ archived_at      optional UTC
 metadata         schema-bounded extension object
 ```
 
-AI proposals use separate candidate records until accepted. Immutable observations may be superseded but are not rewritten to match later interpretation.
+AI proposals use separate candidate records until accepted. Their provenance distinguishes an outbound provider attempt from an inbound external-client proposal without adding provider or client brands to canonical business entity types. Immutable observations may be superseded but are not rewritten to match later interpretation.
 
 ## 2. Aggregate Ownership
 
@@ -91,6 +91,8 @@ Evidence and source observations use `available`, `unavailable`, `superseded`, `
 ### AI candidate
 
 `generated → schema_valid → pending_review → accepted|edited_and_accepted|rejected|stale|superseded`. Only acceptance creates or updates a canonical domain entity through a normal command.
+
+An outbound candidate records provider/model, adapter/capability, task/prompt/schema, sources, privacy decision, and attempt metadata. An inbound MCP proposal records client/grant, MCP contract/tool, sources, scope, and validation metadata. Both retain `ai_proposal` authority until human review; neither gains a provider-specific canonical entity type.
 
 ## 4. Relationship Model
 
@@ -162,6 +164,7 @@ Normal deletion archives or tombstones canonical metadata to preserve referentia
 10. Checkpoint source state is immutable.
 11. Project-scoped entities cannot link across projects.
 12. Capability disablement never deletes domain data.
+13. Provider/model and MCP client identity are provenance attributes, never canonical authority or mandatory dependencies.
 
 ## 10. CP2 Minimum Domain Slice
 

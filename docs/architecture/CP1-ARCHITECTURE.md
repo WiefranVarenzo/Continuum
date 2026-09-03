@@ -1,6 +1,6 @@
 # CP1 Architecture Master Document
 
-> **Status:** Approved baseline; implemented through CP3
+> **Status:** Approved baseline; provider-neutral amendment accepted 2026-09-03; implemented through CP3
 > **Authority:** [Continuum PRD](../../CONTINUUM_PRD.md)  
 > **Decision baseline:** [CP1 Decision Register](../cp1/CP1-DECISION-REGISTER.md)
 
@@ -17,9 +17,9 @@ Continuum is a local-first desktop system that preserves resumable research and 
 - artifact payloads: project-local content-addressed filesystem store using SHA-256.
 - repository integration: Git CLI/libgit adapter behind a stable Rust port.
 - code analysis: Tree-sitter, ast-grep, and format-specific adapters.
-- semantic provider: Gemini behind an application-owned AI Gateway.
+- semantic providers: replaceable adapters behind an application-owned AI Provider Gateway; Gemini remains first-class, with OpenAI, Anthropic, and selected OpenAI-compatible services supported by capability-tested profiles.
 - graph UI: React Flow with ELK layout.
-- local external-AI protocol in CP11: MCP over stdio, read-first with proposal-based writes.
+- local external-AI protocol in CP11: Continuum MCP Server over stdio, read-first with project-scoped proposal-based writes; Streamable HTTP is separately gated.
 - first release target: Windows 11; Linux follows through platform adapters. Core architecture remains cross-platform.
 
 The desktop stack is selected because it combines a web UI ecosystem with a resource-bounded native core and OS capability adapters. Provider- and platform-specific behavior may not leak into domain contracts.
@@ -35,7 +35,7 @@ Application Services / Command Bus / Query Bus
   ↓
 Domain Modules
   ↓ ports
-SQLite • Artifact Store • Git • Analyzers • Gemini • Capture • Export
+SQLite • Artifact Store • Git • Analyzers • AI Provider Gateway • Capture • Export • MCP Server
 ```
 
 This is not full event sourcing. Current canonical state is stored directly, while an append-only audit event stream records material transitions. Derived projections can be rebuilt from canonical state plus source observations where declared.
@@ -60,7 +60,7 @@ Owns no duplicate business entities. It validates typed cross-Space links, suppo
 
 ### Cross-cutting adapters
 
-AI, capture, graph/reporting, Git, parser/analyzer, import/export, and MCP adapters depend on application ports. They cannot bypass domain validation, privacy policy, or transaction boundaries.
+AI providers, capture, graph/reporting, Git, parser/analyzer, import/export, and MCP adapters depend on application ports. They cannot bypass domain validation, privacy policy, authorization, provenance, review, or transaction boundaries. Outbound model invocation and inbound MCP access are separate ports.
 
 ## 5. Component Responsibilities
 
@@ -74,7 +74,7 @@ Authenticates local intent, validates command envelopes, starts transactions, ca
 
 ### Domain layer
 
-Defines entities, value objects, lifecycle transitions, origin, provenance, relationship rules, Space optionality, and invariants. It is independent of UI, Gemini, Git, and OS APIs.
+Defines entities, value objects, lifecycle transitions, origin, provenance, relationship rules, Space optionality, and invariants. It is independent of UI, model provider, MCP client, Git, and OS APIs.
 
 ### Persistence adapter
 
@@ -88,9 +88,13 @@ Stages streams, hashes content, atomically finalizes payloads, stores metadata t
 
 Observe repository state without modifying Git history. They emit versioned deterministic observations tied to repository identity and exact content/commit coordinates.
 
-### AI Gateway
+### AI Provider Gateway
 
-Receives a typed semantic task, builds a deterministic candidate source set, applies privacy policy and redaction, invokes Gemini, validates structured output, records metadata, and returns a pending-review candidate.
+Receives a typed semantic task, builds a deterministic candidate source set, applies privacy policy and redaction, selects an eligible provider/model through explicit deterministic routing, invokes a replaceable provider adapter, normalizes and validates structured output, records attempt metadata, and returns a pending-review candidate. Provider capabilities and deviations are declared and tested; API-format compatibility alone never grants support status.
+
+### Continuum MCP Server
+
+Acts as an inbound CP11 adapter for compatible AI clients. It exposes versioned, bounded, project-scoped resources, prompts, and read/proposal tools through application services. It never exposes raw SQLite, arbitrary files or shell execution, provider credentials, or direct canonical mutation. Local stdio is the MVP transport; remote Streamable HTTP requires its own authentication, binding, origin, revocation, rate-limit, and threat-model gate.
 
 ### Checkpoint and Context Engine
 
@@ -151,14 +155,15 @@ Windows 11 is the first certified platform. Git, media/capture, credential, and 
 - background crash: lease expires and retry resumes idempotently.
 - Git rewrite: preserve old observation and reconcile through explicit supersession.
 - analyzer failure: retain file/diff-level observation and expose limitation.
-- Gemini/network failure: preserve deterministic workflow; task remains retryable.
+- provider/network/capability failure: isolate the affected profile, preserve deterministic workflow, and return a normalized retryable or non-retryable state; sensitive data never silently changes destination.
+- MCP client/server failure: terminate or revoke the scoped session without affecting local workflows or outbound provider operation.
 - capture interruption: finalize recoverable segment where format permits.
 - projection corruption: rebuild derived projection without rewriting canonical data.
 - migration failure: restore pre-migration backup and keep old project usable.
 
 ## 11. Versioning and Compatibility
 
-Database schema, domain contracts, event types, analyzer outputs, prompt templates, AI output schemas, Context Pack schemas, project exports, and MCP tools are independently versioned. Readers must reject unsupported major versions and tolerate documented additive minor fields. Migrations are forward-only with automatic pre-migration backup.
+Database schema, domain contracts, event types, analyzer outputs, prompt templates, AI task/output schemas, provider capability profiles, Context Pack schemas, project exports, MCP resources/prompts/tools, and client grants are independently versioned. Readers must reject unsupported major versions and tolerate documented additive minor fields. Provider and MCP protocol versions are negotiated outside domain identity. Migrations are forward-only with automatic pre-migration backup.
 
 ## 12. Architectural Invariants
 
@@ -174,6 +179,8 @@ Database schema, domain contracts, event types, analyzer outputs, prompt templat
 10. Artifact references never silently resolve outside the project policy boundary.
 11. Git and analyzers observe repositories; they do not become source control.
 12. Optional adapter failure cannot corrupt or disable unrelated core workflows.
+13. No provider or MCP client is a canonical dependency or gains direct canonical-write authority.
+14. Provider routing is explicit and policy-bound; external-client access is project- and capability-scoped.
 
 ## 13. CP2 Handoff Contract
 
@@ -189,4 +196,4 @@ CP2 implements only Continuity Core foundations needed by later checkpoints:
 - backup/export skeleton and integrity diagnostics;
 - application command/query transaction boundary.
 
-CP2 must not prematurely implement full Research, Git intelligence, Gemini, capture, or MCP behavior. It provides stable ports and test doubles for those later checkpoints.
+CP2 must not prematurely implement full Research, Git intelligence, AI provider, capture, or MCP behavior. It provides stable ports and test doubles for those later checkpoints. ADR-006 introduces no CP2/CP3 migration because provider profiles, AI attempts/candidates, and external-client grants are forward additions owned by CP7 and CP11.

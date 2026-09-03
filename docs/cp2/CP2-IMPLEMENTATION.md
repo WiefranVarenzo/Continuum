@@ -26,7 +26,7 @@ CP2 converts the CP1 system contracts into a deterministic Rust library and proj
 
 - Research Question, Evidence, Experiment, Result, Finding, Decision, and Requirement aggregates (CP3).
 - Git ingestion, ChangeSets, and repository baseline behavior (CP4).
-- Code intelligence (CP5), cross-Space knowledge graph behavior (CP6), Gemini (CP7), visual reports (CP8), capture (CP9), semantic Context Pack selection (CP10), MCP/AI clients (CP11), and release hardening (CP12).
+- Code intelligence (CP5), cross-Space knowledge graph behavior (CP6), provider-neutral AI (CP7), visual reports (CP8), capture (CP9), semantic Context Pack selection (CP10), Continuum MCP Server/external AI clients (CP11), and release hardening (CP12).
 
 ## Project layout
 

@@ -1,12 +1,12 @@
 # Continuum - Product Requirements Document
 
 > **Status:** Approved product baseline; implementation validated through CP3
-> **Version:** 1.1.0
-> **Last updated:** 2026-09-02
+> **Version:** 1.2.0
+> **Last updated:** 2026-09-03
 > **Primary source of truth:** This Markdown document  
 > **Product stage:** CP3 PASS - Ready for CP4 Development Core
 > **Change policy:** Material changes to product direction, domain boundaries, privacy posture, or checkpoint scope require an explicit decision record (ADR) and an update to this PRD.
-> **Related decision:** [ADR-001 - Modular Spaces and Optional R&D Bridge](docs/adr/ADR-001-MODULAR-SPACES-AND-OPTIONAL-RD-BRIDGE.md)
+> **Related decisions:** [ADR-001 - Modular Spaces and Optional R&D Bridge](docs/adr/ADR-001-MODULAR-SPACES-AND-OPTIONAL-RD-BRIDGE.md); [ADR-006 - Provider-Neutral AI and MCP Boundaries](docs/adr/ADR-006-PROVIDER-NEUTRAL-AI-AND-MCP-BOUNDARIES.md)
 
 ## 1. Executive Summary
 
@@ -14,9 +14,9 @@ Continuum is a local-first R&D workspace that preserves where work stopped, what
 
 The central product promise is continuity: a user, collaborator, or AI assistant should be able to answer *where work stopped*, *what changed*, *why it changed*, *which evidence justified it*, *what remains unresolved*, and *what to do next*. When Research and Development are connected, the same history should also reveal which Decision authorized a Requirement, where it was implemented, and how it was verified. Continuum therefore treats provenance, smart-bookmark Checkpoints, progressive retrieval, and reproducible project state as first-class product capabilities.
 
-The initial product is optimized for a single technical researcher/developer working on a laptop with an AMD Ryzen 5 5600H and 16 GB RAM. Durable project facts are stored locally and deterministically. Gemini provides bounded semantic assistance-such as synthesis, candidate findings, contradiction analysis, diagram planning, and change explanation-but does not become the source of truth and may not silently mutate canonical records. AI inputs pass through a privacy gateway, use versioned prompts and schemas, and produce reviewable outputs with provenance.
+The initial product is optimized for a single technical researcher/developer working on a laptop with an AMD Ryzen 5 5600H and 16 GB RAM. Durable project facts are stored locally and deterministically. A provider-neutral AI layer can use Gemini, OpenAI, Anthropic, selected OpenAI-compatible services such as OpenRouter, DeepSeek, and BytePlus ModelArk, or future conforming providers for bounded semantic assistance. No model becomes the source of truth or may silently mutate canonical records. AI inputs pass through one privacy gateway, use versioned prompts and schemas, and produce reviewable outputs with provenance. Separately, a permissioned Continuum MCP Server lets compatible external clients such as Codex, Claude Code, and Gemini CLI consume bounded project context and submit proposals without raw database or filesystem access.
 
-Delivery is organized into the previously agreed **12 checkpoints (CP1–CP12)**. CP1 completes the architecture, domain model, system contracts, privacy model, diagrams, performance budgets, and ADRs. CP2–CP12 progressively implement the continuity foundation, research and development workflows, code intelligence, provenance graph, Gemini integration, visualization/reporting, research capture, context engine, AI continuity interface, and production hardening.
+Delivery is organized into the previously agreed **12 checkpoints (CP1–CP12)**. CP1 completes the architecture, domain model, system contracts, privacy model, diagrams, performance budgets, and ADRs. CP2–CP12 progressively implement the continuity foundation, research and development workflows, code intelligence, provenance graph, provider-neutral semantic intelligence, visualization/reporting, research capture, context engine, MCP-based AI continuity interface, and production hardening.
 
 ## 2. Document Purpose and Authority
 
@@ -56,7 +56,7 @@ Continuum enables rigorous, inspectable, and resumable research and development-
 
 Technical R&D is fragmented across browser tabs, recordings, documents, chat sessions, source repositories, issue trackers, terminal output, and human memory. Conventional note-taking preserves fragments but usually loses the causal chain between evidence and implementation. Git records code evolution but not necessarily research intent. AI assistants can accelerate analysis, yet their context is transient, their outputs may be unverifiable, and repeated sessions often reconstruct the same background at high token and time cost.
 
-This fragmentation creates five core problems:
+This fragmentation creates six core problems:
 
 1. **Lost rationale:** teams know what the code does today but cannot reliably reconstruct why a design or implementation decision was made.
 2. **Weak traceability:** evidence, findings, requirements, changes, and tests are stored separately and linked inconsistently when a project needs both research and development.
@@ -75,12 +75,12 @@ This fragmentation creates five core problems:
 - G-04: Make Research Space and Development Space independently useful over one shared Continuity Core, without requiring one as a prerequisite for the other.
 - G-05: Create semantic checkpoints that allow users and AI tools to resume work from a compact, verifiable project state.
 - G-06: Generate bounded Context Packs with explicit provenance, scope, freshness, and token budgets.
-- G-07: Integrate Gemini for semantic tasks while keeping canonical data and safety-critical operations deterministic.
+- G-07: Support replaceable AI providers for semantic tasks while keeping canonical data and safety-critical operations deterministic; Gemini remains a first-class provider rather than a domain dependency.
 - G-08: Support structured capture of screens, system audio, microphone, screenshots, browser material, files, web evidence, and markers.
 - G-09: Generate useful graph visualizations, architecture diagrams, research reports, and development documentation.
 - G-10: Operate responsively on Ryzen 5 5600H / 16 GB RAM through incremental processing, caching, background jobs, and bounded concurrency.
 - G-11: Protect private project data through local-first storage, explicit consent, data minimization, redaction, and auditable AI requests.
-- G-12: Expose continuity safely to external AI clients through a permissioned interface in CP11.
+- G-12: Expose continuity safely through a permissioned Continuum MCP Server to compatible external AI clients in CP11.
 - G-13: Let a project begin in Research-only or Development-only usage and enable the other Space later without project migration or loss of history.
 
 ### 5.2 Non-goals
@@ -121,7 +121,7 @@ Reviews whether findings are supported, decisions are justified, requirements ar
 
 ### 6.4 System persona - Permissioned AI assistant
 
-Consumes a bounded Context Pack through the AI Continuity Interface, cites source entity IDs, proposes structured outputs, and operates within explicit permissions. It is a consumer and contributor of reviewable candidates, not the owner of canonical truth.
+Consumes a bounded Context Pack through the MCP-based AI Continuity Interface, cites source entity IDs, proposes structured outputs, and operates within explicit project/capability permissions. It is a consumer and contributor of reviewable candidates, not the owner of canonical truth.
 
 ## 7. Core User Journeys
 
@@ -144,7 +144,7 @@ The entry choice configures the initial experience; it is not an immutable proje
 2. The user captures a web page, file, screenshot, recording segment, note, or marker.
 3. Continuum stores the original artifact or stable reference plus metadata and content hash.
 4. The user associates the Evidence with a Research Question or Experiment.
-5. Gemini may propose a summary, candidate Finding, or contradiction, with cited Evidence IDs.
+5. An enabled AI provider may propose a summary, candidate Finding, or contradiction, with cited Evidence IDs.
 6. The user edits, accepts, or rejects the candidate.
 7. Accepted Findings become canonical records while retaining their derivation trail.
 8. The user creates a Research Checkpoint containing active questions, Evidence state, ongoing Experiments, current Findings, uncertainties, and next research actions.
@@ -189,7 +189,7 @@ Expected outcome: useful work can resume without rereading the entire project.
 
 1. The user selects a commit, ChangeSet, file, or symbol.
 2. Continuum collects deterministic diff and graph context.
-3. Gemini produces a structured explanation grounded in linked Decisions, Requirements, and tests.
+3. The selected AI provider produces a structured explanation grounded in linked Decisions, Requirements, and tests.
 4. Unsupported statements are flagged as inference or unknown.
 5. The user may save the explanation as a versioned generated artifact.
 
@@ -217,11 +217,11 @@ Expected outcome: useful work can resume without rereading the entire project.
 - optional R&D Bridge linking research outcomes, implementation, validation, and learning feedback;
 - structural code intelligence using Tree-sitter, ast-grep, dependency/configuration analyzers, and test parsers;
 - provenance graph and bidirectional navigation;
-- Gemini semantic services with structured outputs, caching, privacy controls, and prompt/schema versioning;
+- provider-neutral semantic services with Gemini, OpenAI, Anthropic, selected OpenAI-compatible providers, structured outputs, caching, privacy controls, and prompt/schema versioning;
 - React Flow + ELK graph/diagram presentation;
 - capture workflow for screen, system audio, microphone, screenshots, markers, browser, files, and web evidence;
 - checkpoints, Context Packs, and progressive retrieval;
-- permissioned AI Continuity Interface;
+- permissioned MCP-based AI Continuity Interface for compatible external clients;
 - observability, recovery, migration, packaging, and release hardening.
 
 ### 8.2 Outside the initial scope
@@ -244,7 +244,7 @@ Continuum has three product domains and one optional cross-domain bridge:
 3. **Development Space** is independently usable and manages existing intent/Requirements, repository baselines, commits, diffs, ChangeSets, code structure, dependencies, configurations, Tests, TestRuns, validation, and development documentation. It does not require in-product research history.
 4. **R&D Bridge** is optional and connects accepted research outcomes to implementation, then returns validation learning to the appropriate research or requirement state.
 
-Cross-cutting services include Gemini Semantic Brain, Visual Intelligence & Reports, Research Capture System, and the AI Continuity Interface. These services consume Continuity Core contracts rather than bypassing them.
+Cross-cutting services include Provider-Neutral Semantic Intelligence, Visual Intelligence & Reports, Research Capture System, and the MCP-based AI Continuity Interface. The outbound AI Provider Gateway and inbound Continuum MCP Server are separate adapters; both consume Continuity Core application contracts rather than bypassing them.
 
 Research-only, Development-only, and Connected R&D are usage configurations, not incompatible project types or separate storage formats. Enabling another Space changes available capabilities and views, not the identity or history of the project. Space-specific modules must not manufacture placeholder entities merely to satisfy the connected chain.
 
@@ -370,7 +370,7 @@ The graph must also represent:
 - FR-RS-007: Users can create Findings and mark Evidence/Results as supporting, challenging, contextual, or inconclusive.
 - FR-RS-008: Users can record Decisions with selected option, alternatives, rationale, constraints, status, and supersession.
 - FR-RS-009: A research timeline shows material events in deterministic chronological order with filters.
-- FR-RS-010: Gemini may propose summaries, Finding candidates, and contradictions; users can accept, edit, reject, or defer each proposal.
+- FR-RS-010: An enabled AI provider may propose summaries, Finding candidates, and contradictions; users can accept, edit, reject, or defer each proposal.
 - FR-RS-011: Accepted AI candidates preserve both the original proposal and the user-approved version.
 - FR-RS-012: Search supports metadata/text filtering and, when enabled, semantic retrieval without hiding deterministic matches.
 - FR-RS-013: Research workflows, reports, Checkpoints, and Context Packs operate without an attached repository or any Development Space entity.
@@ -388,7 +388,7 @@ The graph must also represent:
 - FR-DS-008: Unsupported languages or constructs degrade to file/diff-level representation rather than blocking ingestion.
 - FR-DS-009: Users can navigate from ChangeSet to modified CodeEntities and known Tests.
 - FR-DS-010: The system distinguishes detected test definitions, Requirement-to-Test links, and observed TestRuns.
-- FR-DS-011: Gemini may explain changes and propose traceability links, but deterministic diffs and user-approved links remain authoritative.
+- FR-DS-011: An enabled AI provider may explain changes and propose traceability links, but deterministic diffs and user-approved links remain authoritative.
 - FR-DS-012: Repository rebase, amended commit, branch switch, rename, and deletion scenarios do not silently corrupt existing provenance.
 - FR-DS-013: Development workflows, documentation, Checkpoints, and Context Packs operate without a Research Question, Evidence, Experiment, Result, or Finding.
 - FR-DS-014: Users can enter or import an existing Requirement, task, brief, issue, Decision, or direct implementation intent and retain its declared origin.
@@ -412,18 +412,23 @@ The graph must also represent:
 - FR-KG-005: AI-proposed relationships remain pending until accepted where they affect canonical traceability.
 - FR-KG-006: The UI distinguishes deterministic, user-authored, imported, and AI-proposed graph elements.
 
-### 10.6 Gemini Semantic Brain
+### 10.6 Provider-Neutral Semantic Intelligence
 
-- FR-AI-001: Gemini access is isolated behind an AI service boundary and privacy gateway.
+- FR-AI-001: Every model provider is isolated behind one application-owned AI Provider Gateway and privacy gateway.
 - FR-AI-002: Every supported semantic task uses a versioned prompt template and output schema.
 - FR-AI-003: Outputs are schema-validated before entering the application.
 - FR-AI-004: Invalid, incomplete, timed-out, or refused outputs fail safely and remain retryable.
 - FR-AI-005: Semantic tasks include research synthesis, Finding candidates, contradiction analysis, change explanation, and diagram planning.
-- FR-AI-006: The service provides cache keys derived from task type, prompt/schema version, permitted input state, and model configuration.
+- FR-AI-006: Cache keys include task, prompt/schema, permitted input state, exact provider/model, adapter profile, and relevant routing configuration.
 - FR-AI-007: Cached outputs expose their generation time and become invalid/stale when relevant inputs or versions change.
 - FR-AI-008: Users can inspect the categories and estimated size of data before transmission.
 - FR-AI-009: The system logs AI request metadata without logging prohibited secret or source content.
-- FR-AI-010: Loss of Gemini connectivity does not block deterministic project operations.
+- FR-AI-010: Loss of any or all provider connectivity does not block deterministic project operations.
+- FR-AI-011: Provider/model profiles declare capabilities and known deviations; unknown capabilities fail closed rather than being inferred from API compatibility.
+- FR-AI-012: Provider routing and failover are deterministic, policy-constrained, user-visible where consent is required, and fully provenance-recorded.
+- FR-AI-013: Sensitive content never silently fails over to another provider; `secret/never-send` is never remotely transmitted.
+- FR-AI-014: Gemini is supported as a first-class adapter while at least one non-Gemini path proves provider replacement without domain changes.
+- FR-AI-015: Each provider attempt records exact destination/model, adapter/capability versions, sources, policy decision, usage, validation, errors, and review state.
 
 ### 10.7 Visual Intelligence and Reports
 
@@ -471,11 +476,15 @@ The graph must also represent:
 ### 10.10 AI Continuity Interface
 
 - FR-ACI-001: External AI clients authenticate and receive least-privilege, project-scoped capabilities.
-- FR-ACI-002: The interface exposes versioned read contracts for project state, graph traversal, checkpoints, Context Packs, and artifact metadata.
+- FR-ACI-002: A Continuum MCP Server exposes versioned resources and read tools for project state, graph traversal, checkpoints, Context Packs, and artifact metadata.
 - FR-ACI-003: Write operations, if enabled, create proposals or commands subject to validation, policy, audit, and user approval.
 - FR-ACI-004: The interface never exposes raw secrets, denied artifacts, or unrestricted filesystem access.
 - FR-ACI-005: Responses include stable IDs, provenance, schema version, pagination/budget information, and structured errors.
 - FR-ACI-006: Clients cannot bypass the privacy gateway or canonical domain invariants.
+- FR-ACI-007: Local stdio is the MVP MCP transport; Streamable HTTP requires separate authentication, origin, binding, revocation, and threat-model acceptance.
+- FR-ACI-008: Client-specific configuration for Codex, Claude Code, Gemini CLI, and future clients remains outside domain contracts and relies on negotiated MCP capabilities.
+- FR-ACI-009: MCP resources use opaque application identifiers rather than filesystem paths, and tool access is filtered by project/capability grant.
+- FR-ACI-010: MCP failure, disablement, or client incompatibility does not block local deterministic workflows or outbound provider use.
 
 ## 11. AI and Deterministic Processing Policy
 
@@ -497,7 +506,7 @@ The following must remain deterministic and application-controlled:
 
 ### 11.2 AI-appropriate responsibilities
 
-Gemini may assist with:
+An enabled provider may assist with:
 
 - summarization and synthesis;
 - candidate Findings and candidate relationships;
@@ -548,12 +557,12 @@ AI output progresses through explicit states such as `generated`, `invalid`, `pe
 
 - NFR-OFF-001: Project navigation, entity CRUD, graph traversal, checkpoint inspection, Git history already ingested, and deterministic search work offline.
 - NFR-OFF-002: Network-dependent actions clearly state unavailable status and do not block unrelated workflows.
-- NFR-OFF-003: Cached AI output is labeled with age and source state.
+- NFR-OFF-003: Cached AI output is labeled with provider/model, age, source state, and freshness.
 
 ### 12.3 Maintainability and evolvability
 
 - NFR-MNT-001: Domain modules communicate through versioned contracts.
-- NFR-MNT-002: Analyzer, AI provider, capture backend, renderer, and export formats have replaceable adapters where defined in CP1.
+- NFR-MNT-002: Analyzer, AI provider, MCP transport/client profile, capture backend, renderer, and export formats have replaceable adapters where defined in CP1.
 - NFR-MNT-003: Schema, prompt, parser, and contract versions are observable in diagnostics.
 - NFR-MNT-004: Architectural decisions are recorded as ADRs.
 
@@ -568,7 +577,7 @@ AI output progresses through explicit states such as `generated`, `invalid`, `pe
 ### 12.5 Observability
 
 - NFR-OBS-001: Structured local logs use correlation IDs for commands and background jobs.
-- NFR-OBS-002: Diagnostics include duration, queue time, cache status, analyzer version, and bounded error context.
+- NFR-OBS-002: Diagnostics include duration, queue time, cache status, analyzer/provider/MCP contract versions, and bounded error context.
 - NFR-OBS-003: Secret and private payload content is excluded or redacted from logs.
 - NFR-OBS-004: Users can export a privacy-scrubbed diagnostic bundle.
 
@@ -581,7 +590,7 @@ AI output progresses through explicit states such as `generated`, `invalid`, `pe
 
 ### 13.1 Privacy posture
 
-Continuum is local-first. Local canonical data remains usable without cloud services. External transmission is purpose-bound, minimized, previewable, and controlled by project/user policy.
+Continuum is local-first. Local canonical data remains usable without cloud services. Outbound provider transmission and inbound MCP disclosure are separate policy decisions; both are purpose-bound, minimized, previewable where required, and controlled by project/user policy.
 
 ### 13.2 Data classification
 
@@ -603,6 +612,8 @@ Defaults should be conservative. Exact default classification and inheritance be
 - SEC-005: Denied content cannot be reintroduced through retrieved summaries or linked artifacts.
 - SEC-006: AI request audit records store metadata and references without retaining prohibited raw content.
 - SEC-007: The user can disable all external AI requests per project.
+- SEC-018: Enabled provider/model profiles are project-allowlisted and include verified destination, capability, retention/training, region, and compatibility metadata.
+- SEC-019: Sensitive data cannot silently fail over to another provider/destination; secret/never-send has no remote route.
 
 ### 13.4 Storage and access
 
@@ -613,6 +624,9 @@ Defaults should be conservative. Exact default classification and inheritance be
 - SEC-012: Path traversal, symlink escape, malformed archive, and untrusted file-name risks are addressed in import/export and artifact handling.
 - SEC-013: Rendering and parsing untrusted captured content does not grant it command execution authority.
 - SEC-014: External AI clients use explicit authentication, scoped authorization, rate limits, and audit records.
+- SEC-020: MCP authorization is checked on every request against project, Space, resource/tool, privacy audience, and budget scope.
+- SEC-021: MCP exposes no raw database, SQL, unrestricted filesystem, shell, environment, credential, or direct canonical-write capability.
+- SEC-022: Streamable HTTP remains disabled until origin validation, local-binding defaults, authentication, session, revocation, and deployment threat controls pass.
 
 ### 13.5 Capture consent
 
@@ -622,7 +636,7 @@ Defaults should be conservative. Exact default classification and inheritance be
 
 ### 13.6 Threats in scope
 
-CP1 threat modeling must cover malicious repository content, prompt injection inside Evidence, secret exfiltration, unsafe file parsing, artifact tampering, database corruption, over-broad Context Packs, unauthorized AI client access, capture without awareness, and denial of service through oversized graphs/media/repos.
+CP1 threat modeling must cover malicious repository content, prompt injection inside Evidence, secret exfiltration, unsafe provider routing/failover, compatibility drift, unsafe file parsing, artifact tampering, database corruption, over-broad Context Packs, unauthorized or cross-project MCP access, confused-deputy behavior, capture without awareness, and denial of service through oversized graphs/media/repos/AI responses.
 
 ## 14. Performance and Resource Targets
 
@@ -656,6 +670,7 @@ Media payload size is measured separately from entity counts.
 - PERF-008: Deterministic Context Pack source selection excluding AI/network latency: p95 ≤ 2 seconds for a normal task scope.
 - PERF-009: Incremental Git ingestion of 100 new commits: completes within 60 seconds under the Standard fixture, with progress and cancellation.
 - PERF-010: Incremental code analysis should prioritize changed files and expose first useful results within 5 seconds; full completion is a background task.
+- PERF-017: Local stdio MCP Current Project State or existing Checkpoint first-page response adds p95 ≤ 500 ms server overhead beyond the equivalent application query, excluding external-client/model latency.
 
 ### 14.4 Resource budgets
 
@@ -689,11 +704,13 @@ These targets are product budgets, not yet validated measurements. CP1 must defi
 - SM-11: A Research-only pilot can stop and resume an investigation from a Research Checkpoint without creating any Development entity.
 - SM-12: A Development-only pilot can document and resume repository work from a Development Checkpoint without creating synthetic research history.
 - SM-13: A pilot project can activate the second Space and establish its first R&D Bridge link without project export/import, duplicate project creation, or loss of prior history.
+- SM-14: Every enabled production provider profile passes the common privacy, schema, provenance, failure, and capability conformance suite before use.
+- SM-15: Supported MCP client profiles complete the scoped read/resume workflow with zero cross-project or denied-content disclosure in acceptance tests.
 
 ### 15.3 Guardrail metrics
 
 - AI candidate acceptance rate is diagnostic, not a target to maximize.
-- Unsupported-claim rate, stale-output usage, redaction misses, failed migrations, broken artifact references, and UI-blocking background tasks must trend toward zero.
+- Unsupported-claim rate, stale-output usage, redaction misses, unsafe provider failover, compatibility drift, MCP authorization failures, failed migrations, broken artifact references, and UI-blocking background tasks must trend toward zero.
 - Capture duration and data volume do not count as success without useful Evidence linkage.
 
 ## 16. MVP Definition
@@ -712,8 +729,9 @@ Prove that a single user can use Research Space or Development Space independent
 - repository baseline, incremental commit/diff ingestion, ChangeSets, and file-level code entities;
 - basic symbol/test extraction for the initially supported language set defined in CP1;
 - standalone Research and Development provenance plus optional canonical linking across the full Connected R&D chain;
-- AI-proposed research synthesis, candidate Findings, contradiction analysis, and change explanation through the privacy gateway;
+- provider-neutral AI-proposed research synthesis, candidate Findings, contradiction analysis, and change explanation through the privacy gateway, proven with Gemini and at least one non-Gemini provider path;
 - semantic Checkpoints and task-scoped Context Packs;
+- a local stdio Continuum MCP Server supporting the scoped read/resume workflow and reviewable proposal submission for supported external clients;
 - scoped knowledge graph visualization and a basic cited Research Report;
 - basic screenshot, file, web evidence, marker, and one supported recording path; advanced cross-platform capture may follow;
 - export/backup, migrations, diagnostics, and recovery needed for pilot safety;
@@ -727,6 +745,8 @@ Prove that a single user can use Research Space or Development Space independent
 - every OS-specific system-audio backend;
 - full transcription/OCR pipeline if it jeopardizes resource targets;
 - unrestricted external write APIs;
+- support for every model provider and every optional provider-native feature;
+- remote/public MCP deployment and Streamable HTTP if its CP11 security gate is not yet satisfied;
 - enterprise identity, administration, and policy distribution;
 - large/stress fixture interactive SLOs.
 
@@ -750,7 +770,9 @@ Deliverables:
 - domain ontology, identifiers, lifecycles, and relationship rules;
 - storage, event, artifact, query, job, import/export, and error contracts;
 - AI-versus-deterministic responsibility matrix;
-- privacy classification, threat model, and AI gateway contract;
+- provider-neutral AI Provider Gateway, capability/routing/failover, and provider-attempt provenance contracts;
+- inbound Continuum MCP Server resources/prompts/tools, grant, transport, and proposal contracts;
+- privacy classification, threat model, and outbound/inbound AI boundary contracts;
 - performance fixtures, budgets, and benchmark protocol;
 - architecture diagrams, sequence flows, data-flow diagrams, and ADR set;
 - acceptance test strategy and traceability from PRD requirements.
@@ -826,20 +848,23 @@ Deliverables:
 
 Exit: standalone partial chains and the optional end-to-end Connected R&D chain can be created, queried, validated, and audited without AI; Learning Feedback can cross the bridge without forcing a loop.
 
-### CP7 - Gemini Semantic Brain
+### CP7 - Provider-Neutral Semantic Intelligence
 
-Purpose: add bounded semantic assistance.
+Purpose: add bounded semantic assistance without provider lock-in.
 
 Deliverables:
 
-- Gemini API adapter;
+- versioned semantic-task and normalized-result contracts;
+- provider registry, capability descriptors, deterministic routing, and explicit failover policy;
+- native Gemini adapter and at least one independently configured non-Gemini provider path;
+- OpenAI-compatible provider profiles for selected services without assuming feature parity;
 - structured output validation;
 - research synthesis, Finding candidates, contradiction analysis, and change explanation;
 - AI privacy gateway;
 - semantic cache and prompt/schema versioning;
-- review workflow and provenance metadata.
+- review workflow, provider-attempt provenance, usage metadata, and conformance tests.
 
-Exit: all AI tasks fail safely, respect privacy policy, cite inputs, and cannot silently mutate canonical truth.
+Exit: enabled providers pass the common conformance gates; routing and failover are inspectable; all AI tasks fail safely, respect privacy policy, cite inputs, and cannot silently mutate canonical truth.
 
 ### CP8 - Visual Intelligence & Reports
 
@@ -875,22 +900,25 @@ Deliverables:
 - semantic Checkpoints and current project state;
 - checkpoint comparison and staleness;
 - progressive retrieval;
-- budgeted, privacy-filtered Context Packs;
+- provider-neutral, budgeted, privacy-filtered Context Packs with declared token-estimate method and uncertainty;
 - context quality and token-efficiency evaluations.
 
 Exit: a user and AI can resume curated pilot tasks from a Context Pack with traceable sources and within declared budgets.
 
 ### CP11 - AI Continuity Interface
 
-Purpose: allow external AI systems to consume Continuum safely.
+Purpose: allow MCP-compatible external AI systems to consume Continuum safely.
 
 Deliverables:
 
-- versioned, permissioned interface for checkpoints, context, graph, and artifact metadata;
-- authentication, scoped authorization, pagination, audit, and rate limits;
+- Continuum MCP Server with local stdio as the MVP transport;
+- versioned, permissioned resources, prompts, and tools for checkpoints, context, graph, and artifact metadata;
+- authentication/grants, scoped authorization, pagination, audit, revocation, and rate limits;
 - proposal-based write contracts where enabled.
+- compatibility fixtures and setup profiles for Codex, Claude Code, and Gemini CLI;
+- separately gated Streamable HTTP support when remote access is approved.
 
-Exit: an external client can perform the approved continuity workflow without filesystem access or privacy bypass.
+Exit: supported MCP clients can perform the approved read/resume and proposal workflows without database/filesystem access, cross-project leakage, direct canonical writes, or privacy bypass.
 
 ### CP12 - Hardening & Release
 
@@ -916,7 +944,8 @@ Exit: MVP exit criteria are met on the reference hardware, release blockers are 
 - ast-grep for structural matching/transformation-oriented analysis use cases.
 - language/package-specific dependency and configuration analyzers.
 - test parsers for supported frameworks.
-- Gemini API for semantic assistance.
+- pluggable model-provider APIs behind the AI Provider Gateway; initial candidates include Gemini, OpenAI, Anthropic, OpenRouter, DeepSeek, and BytePlus ModelArk.
+- MCP protocol implementation for the CP11 Continuum MCP Server.
 - React Flow for interactive graph presentation.
 - ELK for graph/diagram layout.
 - operating-system capture APIs and media codecs/backends for screen/audio capture.
@@ -928,7 +957,8 @@ Exit: MVP exit criteria are met on the reference hardware, release blockers are 
 - License, redistribution, platform support, maintenance health, and security posture are evaluated before adoption.
 - Parser/analyzer upgrades trigger compatibility and output-diff tests.
 - The loss of an optional dependency degrades only its bounded capability.
-- Provider-specific Gemini data retention, region, rate limit, and pricing behavior must be documented before pilot use.
+- Every enabled provider/model profile must document capabilities, deviations, data retention/training posture, region, rate limits, and pricing/usage behavior with a verification date before pilot use.
+- API-format compatibility does not waive provider-specific conformance, privacy, or failure testing.
 
 ### 18.3 Sequencing dependencies
 
@@ -1022,13 +1052,25 @@ Impact: high. Likelihood: medium.
 
 Mitigation: contract tests for Research-only and Development-only projects, nullable/optional cross-Space references by design, no synthetic placeholder entities, scope-aware UI and Checkpoints, and checkpoint exit criteria for independent operation.
 
+### R-14: Superficially compatible providers behave differently
+
+Impact: high. Likelihood: high.
+
+Mitigation: capability descriptors, provider-specific profiles, known-deviation records, common conformance fixtures, exact model/adapter provenance, fail-closed unsupported features, and compatibility revalidation before profile upgrades.
+
+### R-15: MCP expands the project attack surface
+
+Impact: critical. Likelihood: medium.
+
+Mitigation: stdio-first deployment, explicit project/capability grants, authorization on every request, opaque resource IDs, read-first tools, proposal-only consequential writes, no raw database/filesystem/shell access, bounded responses, audit/revocation, and adversarial cross-project tests.
+
 ## 20. CP1 Decisions and Deferred Choices
 
 All former CP1 open questions have been resolved or explicitly assigned as non-blocking work to their owning later checkpoint. The authoritative record is [CP1 Decision Register](docs/cp1/CP1-DECISION-REGISTER.md).
 
 Decisions required by CP2 are locked: Windows-first Tauri/React/Rust desktop architecture, SQLite current state plus audit/outbox, UUIDv7 identity, content-addressed Artifact Store, modular Spaces, explicit provenance/origin, scope-aware Checkpoints, deterministic canonical authority, local-first privacy, and reference-hardware performance budgets.
 
-Exact Gemini deployment configuration belongs to CP7; capture backend validation to CP9; optional embeddings to CP10; and the final MCP tool catalog to CP11. These choices are constrained by CP1 invariants and do not block CP2.
+Exact provider/model support and routing defaults belong to CP7; capture backend validation to CP9; optional embeddings to CP10; and the final MCP resource/prompt/tool catalog plus remote-transport decision to CP11. These choices are constrained by CP1 invariants and ADR-006 and do not reopen CP2 or CP3.
 
 ## 21. Acceptance Criteria
 
@@ -1106,8 +1148,19 @@ Each scenario must support Checkpoint and budgeted Context Pack creation, close/
 - AC-AI-04: Offline/provider-failure mode preserves all deterministic workflows.
 - AC-AI-05: Prompt injection in Evidence cannot change permissions, tool scope, privacy rules, or canonical acceptance state.
 - AC-AI-06: Users can inspect and reject a candidate without losing the underlying sources.
+- AC-AI-07: The same golden task contract runs against Gemini and at least one non-Gemini path without changing domain commands or canonical schemas.
+- AC-AI-08: Unsupported provider capabilities, provider changes, and denied failover produce explicit safe states rather than silent degradation or data transmission.
 
-### 21.8 Checkpoint and context acceptance criteria
+### 21.8 MCP continuity acceptance criteria
+
+- AC-MCP-01: A project-scoped read grant can retrieve Current Project State, a Checkpoint, and a bounded Context Pack through versioned MCP contracts.
+- AC-MCP-02: Cross-project, revoked, expired, capability-denied, and `secret/never-send` requests fail closed and are safely audited.
+- AC-MCP-03: A proposal tool creates no canonical mutation until normal validation and explicit human acceptance complete.
+- AC-MCP-04: The server exposes no raw SQLite, unrestricted filesystem, shell, credential, or provider-token access.
+- AC-MCP-05: Codex, Claude Code, and Gemini CLI client profiles pass the supported read/resume workflow where their negotiated MCP capabilities permit it.
+- AC-MCP-06: MCP server failure or disablement leaves desktop and deterministic project workflows operational.
+
+### 21.9 Checkpoint and context acceptance criteria
 
 - AC-CTX-01: Checkpoint identity resolves to an exact project and ledger position.
 - AC-CTX-02: Repeated deterministic Context Pack selection over unchanged state is stable.
@@ -1118,14 +1171,14 @@ Each scenario must support Checkpoint and budgeted Context Pack creation, close/
 - AC-CTX-07: Research and Development Checkpoints omit irrelevant mandatory fields rather than filling them with placeholders.
 - AC-CTX-08: Checkpoints can be created before completion and never imply that the project or workflow has ended.
 
-### 21.9 Performance acceptance criteria
+### 21.10 Performance acceptance criteria
 
 - AC-PERF-01: Performance is measured on the declared reference hardware with fixture version, cold/warm state, and p50/p95 results recorded.
 - AC-PERF-02: Standard interactive targets in Section 14.3 pass or have an approved release exception with mitigation.
 - AC-PERF-03: Heavy indexing and capture remain cancellable and do not cause out-of-memory termination under the defined stress procedure.
 - AC-PERF-04: Graph views beyond the visible-node budget paginate, cluster, or scope rather than freezing the UI.
 
-### 21.10 Security and recovery acceptance criteria
+### 21.11 Security and recovery acceptance criteria
 
 - AC-SEC-01: Credentials are absent from project exports, logs, and the SQLite database.
 - AC-SEC-02: Malformed archives and traversal/symlink fixtures cannot write outside the intended project/import area.
@@ -1136,7 +1189,7 @@ Each scenario must support Checkpoint and budgeted Context Pack creation, close/
 ## 22. Verification Strategy
 
 - Unit tests validate entity invariants, lifecycle transitions, policy rules, budget calculations, and schema validators.
-- Contract tests validate adapters for Git, analyzers, Gemini, capture backends, renderers, and the AI Continuity Interface.
+- Contract tests validate adapters for Git, analyzers, every enabled AI provider profile, capture backends, renderers, and the MCP-based AI Continuity Interface.
 - Integration tests validate SQLite transactions, migrations, Artifact Store consistency, event/projection behavior, and import/export.
 - Golden-fixture tests validate parsers, provenance chains, checkpoint summaries, Context Pack selection, and report citations.
 - Property/fuzz tests target graph constraints, import formats, paths/archives, schema migrations, and idempotent ingestion.
@@ -1166,7 +1219,9 @@ A release candidate requires:
 
 **AI candidate:** Structured model output awaiting validation and, where consequential, user review before canonical acceptance.
 
-**AI Continuity Interface:** Permissioned external interface through which AI clients obtain project state or submit bounded proposals.
+**AI Continuity Interface:** Permissioned external interface, implemented as the Continuum MCP Server in CP11, through which compatible AI clients obtain project state or submit bounded proposals.
+
+**AI Provider Gateway:** The sole outbound application boundary that privacy-checks, routes, invokes, normalizes, validates, and audits semantic model requests.
 
 **Artifact:** A stored payload such as a source snapshot, screenshot, recording, report, or derived file, identified independently from domain metadata.
 
@@ -1208,11 +1263,17 @@ A release candidate requires:
 
 **Ledger position:** Stable marker identifying the included boundary of project history for a checkpoint or generated output.
 
+**MCP (Model Context Protocol):** The negotiated protocol used by compatible external AI hosts to consume Continuum resources, prompts, and tools.
+
+**Continuum MCP Server:** The inbound, project-scoped CP11 adapter that exposes bounded continuity reads and proposal operations without raw storage or filesystem access.
+
 **Learning Feedback:** A typed outcome from development or validation that may create new Evidence or Result, or propose revision of a Finding, Decision, Requirement, or unresolved item.
 
 **Project Ledger:** Local canonical persistence and history mechanism for project entities, relationships, and events.
 
 **Provenance:** Traceable origin and derivation of an entity, relationship, claim, decision, change, or generated output.
+
+**Provider adapter/profile:** Replaceable provider-specific transport plus declared capabilities, deviations, policy metadata, and conformance evidence behind the stable AI Provider Gateway contract.
 
 **Research Question:** A defined question, hypothesis, or uncertainty that organizes research activity.
 

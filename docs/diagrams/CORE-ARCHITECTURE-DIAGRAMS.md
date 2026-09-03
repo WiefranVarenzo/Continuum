@@ -16,7 +16,12 @@ flowchart TB
   CC --> AS[(Artifact Store)]
   CC --> CE[Checkpoint & Context Engine]
   CC --> PG[Privacy Gateway]
-  PG --> GM[Gemini]
+  PG --> AIG[AI Provider Gateway]
+  AIG --> GM[Gemini]
+  AIG --> OA[OpenAI / Anthropic]
+  AIG --> OC[OpenRouter / DeepSeek / BytePlus]
+  MCP[Continuum MCP Server] <--> CC
+  Clients[Codex / Claude Code / Gemini CLI] <--> MCP
 ```
 
 ## 2. System Context
@@ -26,8 +31,9 @@ flowchart LR
   User --> Continuum
   Continuum <--> Repo[Local Git Repository]
   Continuum <--> Files[Files / Web Evidence / Capture]
-  Continuum --> Gemini[Gemini API]
-  Client[Permissioned AI Client] <--> Continuum
+  Continuum --> Providers[Permissioned Model Provider APIs]
+  Client[Codex / Claude Code / Gemini CLI] <--> MCP[Continuum MCP Server]
+  MCP <--> Continuum
   Continuum --> Export[Portable Project Export]
 ```
 
@@ -94,7 +100,8 @@ flowchart TB
   PORTS --> SQL[SQLite Adapter]
   PORTS --> ART[Artifact Adapter]
   PORTS --> GIT[Git / Analyzer Adapters]
-  PORTS --> AI[AI Gateway]
+  PORTS --> AI[AI Provider Gateway]
+  PORTS --> MCP[Continuum MCP Server]
   PORTS --> CAP[Capture Adapter]
 ```
 
@@ -104,7 +111,8 @@ flowchart TB
 flowchart LR
   S[Canonical Sources] --> R[Deterministic Retrieval]
   R --> P[Privacy Filter]
-  P --> G[Gemini Semantic Task]
+  P --> RTE[Deterministic Provider Router]
+  RTE --> G[Provider Adapter]
   G --> SV[Schema + Source Validation]
   SV --> C[Pending Candidate]
   C --> H{Human Review}
@@ -127,7 +135,21 @@ flowchart TD
   Send --> Validate[Validate Response]
 ```
 
-## 9. Checkpoint Resume
+## 9. Dual AI Integration Boundary
+
+```mermaid
+flowchart LR
+  APP[Continuum Application Services] -->|typed semantic task| AIG[AI Provider Gateway]
+  AIG --> GEM[Gemini]
+  AIG --> OPENAI[OpenAI / Anthropic]
+  AIG --> COMPAT[OpenRouter / DeepSeek / BytePlus]
+  CODEX[Codex] -->|MCP| MCP[Continuum MCP Server]
+  CLAUDE[Claude Code] -->|MCP| MCP
+  GCLI[Gemini CLI] -->|MCP| MCP
+  MCP -->|scoped reads + proposals| APP
+```
+
+## 10. Checkpoint Resume
 
 ```mermaid
 sequenceDiagram
@@ -143,7 +165,7 @@ sequenceDiagram
   E-->>U: Then / Since / Now / Next
 ```
 
-## 10. Context Pack
+## 11. Context Pack
 
 ```mermaid
 flowchart LR

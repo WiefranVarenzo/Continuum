@@ -7,7 +7,7 @@
 
 ## 1. Purpose
 
-CP3 turns the approved Research Space model into a deterministic application/domain module. It lets a project conduct, pause, resume, search, audit, export, restore, and report research without Gemini, Git, a repository, or any Development Space entity.
+CP3 turns the approved Research Space model into a deterministic application/domain module. It lets a project conduct, pause, resume, search, audit, export, restore, and report research without any AI provider, Git, a repository, MCP client, or Development Space entity.
 
 CP3 does not alter the CP1 direction. It consumes the identity, command, transaction, relationship, artifact, event, capability, integrity, checkpoint, backup, and export contracts delivered by CP2.1.
 
@@ -153,7 +153,7 @@ CP4 may attach a repository and link ChangeSets to the stable Requirement record
 
 ## 12. Deliberate Deferrals
 
-- Gemini proposals, synthesis, and contradiction analysis: CP7.
+- provider-neutral AI proposals, synthesis, and contradiction analysis: CP7.
 - captured screenshot/audio/recording acquisition adapters: CP9; CP3 already accepts their stable Artifact references and capture metadata.
 - semantic retrieval and full Context Pack selection: CP10.
 - Git and ChangeSet behavior: CP4.

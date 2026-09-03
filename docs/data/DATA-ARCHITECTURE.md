@@ -1,6 +1,6 @@
 # Continuum Data Architecture
 
-> **Status:** Approved baseline; implemented through schema v3
+> **Status:** Approved baseline; provider/MCP extension plan accepted 2026-09-03; implemented through schema v3
 > **Storage model:** SQLite canonical metadata + project-local content-addressed Artifact Store.
 
 ## 1. Data Authority
@@ -8,6 +8,8 @@
 SQLite owns canonical structured state, relationships, audit sequence, jobs, policy metadata, and artifact references. The Artifact Store owns payload bytes. Git remains authoritative for repository objects; Continuum stores immutable observations and optional bounded snapshots, not a replacement repository.
 
 AI caches, search indexes, graph layouts, and report render caches are derived and rebuildable unless explicitly saved as GeneratedArtifacts.
+
+Provider/model identities and MCP client labels are provenance, not canonical business authority. Provider credentials and MCP authentication secrets are never project data.
 
 ## 2. Project Layout
 
@@ -47,6 +49,8 @@ Core tables:
 Space-specific normalized tables reference `entities.id` and are added in CP3–CP5. Frequently queried lifecycle, type, version, time, origin, source/target, hash, sequence, and job-state fields remain normalized and indexed; JSON is reserved for bounded versioned extensions, not opaque replacement of the domain model.
 
 CP3 adds normalized `research_sessions`, `research_questions`, `evidence`, `experiments`, `results`, `findings`, `decisions`, `requirements`, `research_session_items`, append-only `research_timeline`, and rebuildable `research_search_documents`. Database type guards and the typed application API prevent partial Research aggregates.
+
+CP7 may add normalized `ai_provider_profiles` (non-secret configuration), `ai_tasks`, `ai_attempts`, `ai_candidates`, and `ai_candidate_sources`. CP11 may add `external_client_grants`, `external_client_sessions`, and `external_proposals`. Exact schemas belong to forward-only migrations in their owning checkpoints. No such table stores API keys, OAuth secrets, bearer tokens, or raw credential material.
 
 ## 4. Identity and Ordering
 
@@ -98,11 +102,11 @@ Backup uses SQLite online backup plus immutable/hard-linked or copied referenced
 
 ## 11. Retention and Garbage Collection
 
-Checkpoints and canonical audit history are retained by default. Saved generated artifacts follow user retention. AI cache defaults to bounded LRU and 30 days; request audit metadata defaults to 90 days without prohibited raw content. Ephemeral Context Packs disappear after task/session unless explicitly saved. Artifact GC requires zero live references plus a 30-day recovery window; secret purge may bypass the window with explicit confirmation.
+Checkpoints and canonical audit history are retained by default. Saved generated artifacts follow user retention. AI cache defaults to bounded LRU and 30 days; provider-attempt and request audit metadata defaults to 90 days without prohibited raw content. Ephemeral Context Packs disappear after task/session unless explicitly saved. External client session/audit retention is bounded by the CP11 policy while immutable accepted proposal provenance follows the canonical entity it produced. Artifact GC requires zero live references plus a 30-day recovery window; secret purge may bypass the window with explicit confirmation.
 
 ## 12. Encryption and Credentials
 
-MVP relies on OS account and filesystem/disk encryption for project-at-rest protection. Application-level database encryption is deferred and documented as a limitation. Gemini credentials use OS credential storage. Credentials, environment secrets, and raw provider tokens never enter SQLite, exports, logs, or Context Packs.
+MVP relies on OS account and filesystem/disk encryption for project-at-rest protection. Application-level database encryption is deferred and documented as a limitation. All model-provider credentials and remote MCP authentication secrets use OS credential storage or an equivalent approved external secret facility. Credentials, environment secrets, OAuth material, and raw provider/client tokens never enter SQLite, exports, logs, Context Packs, or generated artifacts.
 
 ## 13. Integrity SLOs
 

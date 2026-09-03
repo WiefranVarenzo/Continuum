@@ -1,8 +1,8 @@
 # CP1 — Architecture, Domain Model & System Contracts
 
-> **Status:** PASS — Ready for CP2  
+> **Status:** PASS — Ready for CP2; provider/MCP amendment accepted 2026-09-03
 > **PRD:** [Continuum PRD](../../CONTINUUM_PRD.md)  
-> **Current architecture decision:** [ADR-001 — Modular Spaces and Optional R&D Bridge](../adr/ADR-001-MODULAR-SPACES-AND-OPTIONAL-RD-BRIDGE.md)  
+> **Current architecture decisions:** [ADR-001 — Modular Spaces and Optional R&D Bridge](../adr/ADR-001-MODULAR-SPACES-AND-OPTIONAL-RD-BRIDGE.md); [ADR-006 — Provider-Neutral AI and MCP Boundaries](../adr/ADR-006-PROVIDER-NEUTRAL-AI-AND-MCP-BOUNDARIES.md)
 > **Purpose:** Produce an implementation-ready architectural blueprint for CP2 without over-specifying later checkpoints.
 
 ## 1. CP1 Outcome
@@ -24,7 +24,8 @@ CP1 designs the system. It does not implement the production database, desktop r
 - Research, Development, and Integrated R&D Checkpoints are supported.
 - Context Packs are purpose-bound, budgeted, provenance-bearing, privacy-filtered, and progressively retrieved.
 - Canonical truth and safety controls are deterministic.
-- Gemini provides bounded semantic assistance through reviewable structured outputs.
+- Replaceable AI providers provide bounded semantic assistance through reviewable structured outputs; Gemini remains first-class but is not a domain dependency.
+- The outbound AI Provider Gateway and inbound Continuum MCP Server are separate, policy-enforced application adapters.
 - The complete research-to-code chain is optional and composable, never fabricated.
 - The product must remain practical on Ryzen 5 5600H / 16 GB RAM.
 - Delivery remains organized as CP1 through CP12 in the approved order.
@@ -43,7 +44,9 @@ CP1 designs the system. It does not implement the production database, desktop r
 - `docs/domain/DOMAIN-MODEL.md` — ontology, entity ownership, relationships, lifecycle, provenance, and authorship.
 - `docs/spaces/CONTINUUM-SPACES.md` — Continuity Core, Research Space, Development Space, R&D Bridge, and capability activation.
 - `docs/data/DATA-ARCHITECTURE.md` — conceptual SQLite model, Artifact Store, identity/versioning, event persistence, transaction boundaries, migration, and recovery posture.
-- `docs/ai/AI-ARCHITECTURE.md` — Gemini boundary, deterministic/AI policy, task catalog, structured outputs, privacy integration, caching, and provenance.
+- `docs/ai/AI-ARCHITECTURE.md` — provider-neutral AI boundary, capability/routing policy, task catalog, structured outputs, privacy integration, caching, and provenance.
+- `docs/ai/MCP-CONTINUITY-INTERFACE.md` — CP11 MCP resources, prompts, tools, authorization, proposal flow, transport, and client-compatibility contract.
+- `docs/ai/PROVIDER-AND-MCP-DELIVERY-PLAN.md` — impact and delivery gates across CP1–CP12.
 - `docs/checkpoint/CHECKPOINT-AND-CONTEXT.md` — Current Project State, Checkpoint variants, Context Pack, staleness, and progressive retrieval.
 - `docs/security/PRIVACY-AND-SECURITY.md` — data classification, privacy gateway, trust boundaries, threats, controls, and capture consent.
 - `docs/performance/PERFORMANCE-BUDGET.md` — reference hardware, workloads, budgets, degradation, and benchmark protocol.
@@ -55,7 +58,7 @@ CP1 designs the system. It does not implement the production database, desktop r
 
 ### ADRs
 
-ADRs are created only for consequential decisions. Candidate subjects include desktop local-first runtime, application stack, SQLite persistence model, Artifact Store strategy, Gemini boundary, deterministic/AI separation, code-intelligence adapters, diagram layout, capture backend, and AI Continuity Interface. A candidate becomes an ADR only when the decision is evaluated and locked.
+ADRs are created only for consequential decisions. Accepted ADR-006 generalizes the original Gemini binding into a provider-neutral gateway and separates it from the MCP continuity boundary. Other candidate subjects include code-intelligence adapters, diagram layout, capture backend, remote MCP deployment, and optional embedding strategy. A candidate becomes an ADR only when the decision is evaluated and locked.
 
 ## 4. Core Diagram Set
 
@@ -70,7 +73,8 @@ The minimum diagram set is:
 7. component and module architecture.
 8. deterministic and semantic processing boundaries.
 9. AI privacy-gateway data flow.
-10. Checkpoint creation, resume, and Context Pack flow.
+10. outbound AI Provider Gateway versus inbound Continuum MCP Server boundary.
+11. Checkpoint creation, resume, and Context Pack flow.
 
 Diagram sources must be version-controlled and reviewable as text where practical. Mermaid is the baseline source format for CP1. A `.drawio` representation is added only when manual diagram editing materially improves communication; it does not replace the textual source or architectural explanation.
 
@@ -183,3 +187,5 @@ If any critical condition remains unresolved, the result is **BLOCKED**, not a p
 - [x] CP1 acceptance audit passed.
 
 **Current result: CP1 PASS — Ready for CP2 Continuity Core.**
+
+The 2026-09-03 provider/MCP amendment does not reopen CP2 or CP3. It preserves every CP1 invariant and assigns new provider records to CP7 and external-client records to CP11 through forward-only extensions.

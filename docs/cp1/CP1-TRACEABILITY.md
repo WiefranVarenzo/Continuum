@@ -26,28 +26,28 @@
 
 ## AI
 
-- FR-AI-001–010 → ADR-004; AI Architecture Sections 1–11; Security privacy gateway → CP7 schema, grounding, injection, cache, and offline tests.
+- FR-AI-001–015 → ADR-004 and ADR-006; AI Architecture Sections 1–15; Security privacy gateway → CP7 schema, grounding, routing/failover, capability, provider-isolation, compatibility-drift, injection, cache, and offline tests.
 - AI/deterministic policy → Architecture invariant 5–7; AI pipeline; Diagram 7–8 → adversarial fixture.
 
 ## Visualization, Capture, and External Interface
 
 - FR-VIS-001–007 → Architecture adapters; Performance graph budget; Diagram sources → CP8 render/citation/staleness tests.
 - FR-CAP-001–010 → Security capture consent; Architecture adapter/failure boundary; Performance streaming/backpressure → CP9 platform tests.
-- FR-ACI-001–006 → Architecture ports; Security MCP boundary; Decision D-020/D-027 → CP11 authorization/contract tests.
+- FR-ACI-001–010 → ADR-006; MCP Continuity Interface Sections 1–13; Architecture ports; Security MCP boundary; Decisions D-020/D-027/D-029/D-032 → CP11 protocol, client-compatibility, cross-project, revocation, authorization, pagination, and proposal tests.
 
 ## Checkpoint and Context
 
-- FR-CTX-001–017 → ADR-005; Checkpoint and Context Sections 1–11; Diagram 9–10 → Fixtures A–D; CP2 envelope tests and CP10 engine tests.
+- FR-CTX-001–017 → ADR-005; Checkpoint and Context Sections 1–11; Diagrams 10–11 → Fixtures A–D; CP2 envelope tests and CP10 engine tests.
 - AC-CTX-01–08 → Checkpoint immutable envelope, resume/staleness, budget/privacy rules → golden checkpoint/context fixtures.
 
 ## Security and Privacy
 
-- SEC-001–017 → Security Sections 1–8; AI Section 7; Data Sections 10–12 → secret canary, traversal, consent, credential, diagnostic, and authorization tests.
+- SEC-001–022 → Security Sections 1–8; AI Architecture Sections 7–11; MCP Continuity Interface Sections 3–11; Data Sections 10–12 → secret canary, routing/failover, traversal, consent, credential, diagnostic, cross-project, revocation, and authorization tests.
 - NFR-OBS-001–004 → Security logging; Architecture event/job correlation → diagnostic scrub fixture.
 
 ## Performance
 
-- PERF-001–016 → Performance Sections 1–7 → versioned benchmark harness and reference-device reports.
+- PERF-001–017 → Performance Sections 1–7 and PRD local MCP overhead target → versioned benchmark harness and reference-device reports.
 - NFR-UX-001–005 → Architecture UI responsibility; Spaces UX rules → accessibility and long-job interaction tests in owning checkpoints.
 
 ## Acceptance Ownership
@@ -57,7 +57,8 @@
 - AC-RS-01–06 → CP3.
 - AC-DS-01–06 → CP4–CP5.
 - AC-BRIDGE-01–04 → CP6.
-- AC-AI-01–06 → CP7.
+- AC-AI-01–08 → CP7.
+- AC-MCP-01–06 → CP11.
 - AC-CTX-01–08 → CP10, with envelope foundations in CP2.
 - AC-PERF-01–04 and AC-SEC-01–05 → continuous validation, final release gate CP12.
 

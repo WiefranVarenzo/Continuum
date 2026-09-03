@@ -1,7 +1,7 @@
 # CP1 Acceptance Checklist
 
 > **Final status:** PASS  
-> **Date:** 2026-08-31
+> **Date:** 2026-08-31; provider/MCP amendment revalidated 2026-09-03
 
 ## Product and Scope
 
@@ -27,6 +27,9 @@
 ## AI, Security, and Performance
 
 - [x] deterministic/AI authority is unambiguous.
+- [x] outbound model-provider and inbound MCP boundaries are separate and unambiguous.
+- [x] provider capability, routing, failover, provenance, and conformance contracts are defined.
+- [x] MCP transport, authorization, resource/tool, proposal, and client-compatibility contracts are defined.
 - [x] privacy gateway and classification are defined.
 - [x] named threats have mandatory controls.
 - [x] reference hardware, fixtures, SLOs, and benchmark method are defined.
@@ -35,6 +38,7 @@
 
 - [x] core diagrams agree with written architecture.
 - [x] consequential decisions have ADRs.
+- [x] ADR-006 records provider-neutral AI and MCP boundary decisions without reopening CP2/CP3.
 - [x] all earlier open questions are accepted or deferred to an owner.
 - [x] requirement families map to architecture and planned tests.
 - [x] all AC-CP1-01–12 are PASS.

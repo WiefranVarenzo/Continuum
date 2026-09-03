@@ -81,14 +81,14 @@ No AI is required to reconstruct deterministic changes since the Checkpoint.
 ## 7. Context Pack Request
 
 ```text
-request_id, project_id, task, audience
+request_id, project_id, task, audience, consumer_target
 scope, checkpoint_id optional, freshness requirement
 include/exclude filters, privacy audience
 soft_budget_tokens, hard_budget_tokens, byte_budget
-retrieval_profile, requested schema version
+retrieval_profile, token_estimator, requested schema version
 ```
 
-Defaults are a 16k-token soft budget and 32k-token hard ceiling for external semantic tasks, configurable downward by task/provider. Larger local-only packs may use byte budgets. Budgets are estimates and output declares actual measured bytes plus provider token estimate when available.
+Defaults are a 16k-token soft budget and 32k-token hard ceiling for external semantic tasks, configurable downward by task, provider, or MCP client grant. Larger local-only packs may use byte budgets. Budgets are estimates; output declares actual measured bytes plus estimator identity, target provider/client when known, token estimate, and uncertainty/fallback when an exact tokenizer is unavailable.
 
 ## 8. Progressive Retrieval
 
@@ -103,13 +103,15 @@ Candidate generation is deterministic using type, status, graph distance, explic
 
 ## 9. Context Pack Output
 
-Every pack includes schema version, purpose, audience, scope, generated time, checkpoint/ledger position, privacy policy version, ordered items, source IDs/versions, provenance edges, freshness, included size, omission summary, unresolved contradictions, and unavailable sources. It never implies omitted content does not exist.
+Every pack includes schema version, purpose, audience, consumer target, scope, generated time, checkpoint/ledger position, privacy policy version, ordered items, source IDs/versions, provenance edges, freshness, included bytes/token estimate and method, omission summary, unresolved contradictions, and unavailable sources. It never implies omitted content does not exist.
 
 Packs are ephemeral by default. Saving creates a GeneratedArtifact with source state and staleness tracking.
 
 ## 10. Privacy and Determinism
 
 Transitive exclusion removes denied payloads and derived summaries whose sources are denied. Users can preview/remove items before transmission. Repeating deterministic selection against identical canonical state, request, policy, and indexes returns the same ordered candidate set; documented semantic tie/reranking is separate.
+
+The same provider-neutral pack contract serves CP7 outbound semantic tasks and CP11 MCP reads. CP7 still applies destination-specific provider privacy policy before transmission; CP11 still applies project/client-grant authorization before disclosure. A pack created for one audience or destination is not automatically reusable for another.
 
 ## 11. Acceptance
 

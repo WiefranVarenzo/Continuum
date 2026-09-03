@@ -1,6 +1,6 @@
 # CP1 Decision Register
 
-> **Status:** Locked for CP2  
+> **Status:** Locked for CP2; amended by ADR-006 on 2026-09-03
 > **Rule:** `Deferred` means intentionally assigned to a later owning checkpoint and not required to implement CP2.
 
 ## Accepted Decisions
@@ -24,17 +24,22 @@
 - D-017: Context Pack default external budget is 16k soft / 32k hard tokens with explicit omission metadata.
 - D-018: Checkpoints retained; AI cache bounded LRU/30 days; sanitized AI audit metadata 90 days; Context Packs ephemeral unless saved.
 - D-019: React Flow + ELK render scoped graphs.
-- D-020: CP11 baseline is local MCP over stdio, read-first, proposal-based writes.
+- D-020: CP11 baseline is a Continuum MCP Server over local stdio, read-first, project/capability-scoped, and proposal-based for consequential writes. Streamable HTTP is separately gated. See ADR-006.
 - D-021: performance reference is Ryzen 5 5600H / 16 GB / SSD; target correctness and budgets are defined in Performance Budget.
 - D-022: context-resumption pilot target is ≥80% correct active goal/constraints/source IDs.
+- D-028: CP7 is provider-neutral. Gemini remains first-class; all providers use capability-tested adapters behind one AI Provider Gateway. See ADR-006.
+- D-029: Outbound model-provider APIs and inbound MCP access are separate application ports and cannot bypass each other's privacy, authorization, validation, provenance, or review boundaries. See ADR-006.
+- D-030: Provider routing is deterministic and project-allowlisted; sensitive requests cannot silently fail over and secret/never-send has no remote route. See ADR-006.
+- D-031: CP7 proves at least Gemini plus one non-Gemini provider path; supporting every named provider is not an MVP requirement.
+- D-032: CP11 targets compatibility fixtures for Codex, Claude Code, and Gemini CLI against one negotiated MCP contract; client-specific configuration never enters domain logic.
 
 ## Deferred Non-Blocking Decisions
 
-- D-023 (CP7): exact supported Gemini model alias, region, quota, provider retention configuration, and fallback, selected against then-current provider availability.
+- D-023 (CP7): exact supported provider/model profiles, regional endpoints, quota/rate limits, retention/training references, cost metadata, and routing defaults, selected against then-current availability and CP7 conformance evidence.
 - D-024 (CP9): final Windows capture implementation and codec/backend after capability spike; architecture baseline is OS-native screen/WASAPI-class adapters with segmented media.
 - D-025 (CP9/after MVP): transcription and OCR are off by default and not required for MVP.
 - D-026 (CP10): embeddings are off by default; local versus remote requires benchmark/privacy ADR if introduced.
-- D-027 (CP11): exact MCP tool catalog and authentication handshake, constrained by read-first/project-scoped contract.
+- D-027 (CP11): exact MCP resource/prompt/tool catalog, grant/authentication handshake, protocol support matrix, and any Streamable HTTP deployment, constrained by the read-first/project-scoped ADR-006 contract.
 
 ## Supersession Policy
 
