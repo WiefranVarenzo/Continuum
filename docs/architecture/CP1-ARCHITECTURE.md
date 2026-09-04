@@ -1,6 +1,6 @@
 # CP1 Architecture Master Document
 
-> **Status:** Approved baseline; provider-neutral amendment accepted 2026-09-03; implemented through CP3
+> **Status:** Approved baseline; provider-neutral amendment accepted 2026-09-03; implemented through CP5
 > **Authority:** [Continuum PRD](../../CONTINUUM_PRD.md)  
 > **Decision baseline:** [CP1 Decision Register](../cp1/CP1-DECISION-REGISTER.md)
 

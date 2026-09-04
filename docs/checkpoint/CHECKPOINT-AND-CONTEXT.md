@@ -1,6 +1,6 @@
 # Checkpoint and Context Architecture
 
-> **Status:** Approved architecture; Core envelope implemented in CP2, Research bookmark/resume projection implemented in CP3, full Context Engine remains CP10.
+> **Status:** Approved architecture; Core envelope implemented in CP2, Research bookmark/resume in CP3, Development bookmark/resume through CP5, full Context Engine remains CP10.
 
 ## 1. Product Contract
 

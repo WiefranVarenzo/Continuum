@@ -9,7 +9,7 @@
 - FR-DS-003 → unique Repository/OID CommitObservation, bounded batch ingestion, idempotent retry/re-ingestion.
 - FR-DS-004 → ordered file-level diff metadata with explicit old/new paths, rename similarity, and no required source-content retention.
 - FR-DS-005 → working-tree/committed ChangeSets and canonical implements/partial/reverts Requirement links.
-- FR-DS-006–010 → file/diff handoff foundation implemented; structural CodeEntity, analyzer, Test, and TestRun ownership remains CP5.
+- FR-DS-006–010 → CP4 file/diff handoff foundation implemented; the CP5 structural CodeEntity, analyzer, Test, and TestRun extension is now implemented and validated separately.
 - FR-DS-011 → correctly deferred to CP7; CP4 rejects AI actors from canonical Development commands.
 - FR-DS-012 → baseline reconciliation fixtures for branch switch, amend/history rewrite, and rename preservation.
 - FR-DS-013 → complete Development-only checkpoint/report/export/restore fixture with Research disabled.
@@ -19,9 +19,9 @@
 ## Development Acceptance Criteria
 
 - AC-DS-01 → `unchanged_baseline_and_commit_reingestion_are_idempotent`.
-- AC-DS-02 → CP4 preserves file/diff fallback; CP5 must prove unsupported structural analyzer fallback.
+- AC-DS-02 → CP4 preserves file/diff fallback; CP5 now proves unsupported structural analyzer fallback with explicit limitations.
 - AC-DS-03 → `rename_branch_switch_and_amend_preserve_distinct_observations` and immutable baseline guards.
-- AC-DS-04 → Requirement state is independent now; Test status remains a CP5 acceptance extension.
+- AC-DS-04 → Requirement state remains independent; CP5 now distinguishes Test definition, verification link, and observed TestRun status.
 - AC-DS-05 → `development_only_cycle_is_reproducible_resumable_and_has_honest_origin` including export/restore.
 - AC-DS-06 → the same end-to-end fixture checks external origin and Research report exclusion.
 

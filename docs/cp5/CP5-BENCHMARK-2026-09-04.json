@@ -1,0 +1,58 @@
+{
+  "analyzer_bundle_version": "continuum-code-intelligence-v1",
+  "arch": "x86_64",
+  "benchmark_version": 1,
+  "build": "0.5.0",
+  "correctness": "500-file cold snapshot and 501-file incremental snapshot analyzed; exactly one cache miss after one changed file; deterministic identities, report, search, and integrity scan verified",
+  "cpu": "AMD Ryzen 5 5600H with Radeon Graphics",
+  "fixture": {
+    "changed_files": 1,
+    "cold_code_entities": 1402,
+    "cold_tests": 400,
+    "incremental_cache_hits": 500,
+    "incremental_cache_misses": 1,
+    "incremental_code_entities": 1404,
+    "incremental_files": 501,
+    "incremental_tests": 401,
+    "initial_files": 500,
+    "json_files": 98,
+    "manifest_files": 2,
+    "name": "code-intelligence-500-v1",
+    "rust_files": 200,
+    "typescript_files": 200
+  },
+  "git_version": "git version 2.55.0",
+  "memory": "15745636 kB",
+  "milliseconds": {
+    "analysis_run_load": {
+      "max": 2.519488,
+      "p50": 2.04966,
+      "p95": 2.2611440000000003
+    },
+    "code_entity_search": {
+      "max": 2.718659,
+      "p50": 2.348481,
+      "p95": 2.5428830000000002
+    },
+    "cold_analysis_500_files": 630.771065,
+    "deterministic_development_report": {
+      "max": 4.466952,
+      "p50": 4.1904840000000005,
+      "p95": 4.429871
+    },
+    "one_changed_file_incremental_analysis": 200.317652
+  },
+  "os": "linux",
+  "output_schema_version": 1,
+  "protocol": {
+    "network_included": false,
+    "samples": 30,
+    "warmups": 5
+  },
+  "targets_ms": {
+    "analysis_run_load": 500,
+    "code_entity_search": 500,
+    "deterministic_development_report": 3000,
+    "one_changed_file_incremental_analysis": 5000
+  }
+}

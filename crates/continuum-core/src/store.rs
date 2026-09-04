@@ -24,6 +24,7 @@ const MIGRATION_1: &str = include_str!("../migrations/0001_core.sql");
 const MIGRATION_2: &str = include_str!("../migrations/0002_contract_alignment.sql");
 const MIGRATION_3: &str = include_str!("../migrations/0003_research_core.sql");
 const MIGRATION_4: &str = include_str!("../migrations/0004_development_core.sql");
+const MIGRATION_5: &str = include_str!("../migrations/0005_code_intelligence.sql");
 const MAX_ACTIVE_JOBS: i64 = 1_000;
 const MAX_ENTITY_JSON_BYTES: usize = 1024 * 1024;
 const MAX_CHECKPOINT_JSON_BYTES: usize = 2 * 1024 * 1024;
@@ -1911,6 +1912,11 @@ impl ContinuityStore {
             &self.manifest.project_id,
             &mut report,
         )?;
+        crate::code_intelligence::append_code_intelligence_integrity_issues(
+            &connection,
+            &self.manifest.project_id,
+            &mut report,
+        )?;
         Ok(report)
     }
 
@@ -2025,6 +2031,7 @@ fn apply_migrations(connection: &mut Connection) -> Result<()> {
         (2_u32, "contract_alignment", MIGRATION_2),
         (3_u32, "research_core", MIGRATION_3),
         (4_u32, "development_core", MIGRATION_4),
+        (5_u32, "code_intelligence", MIGRATION_5),
     ];
     for (version, name, sql) in migrations {
         let checksum = hex::encode(Sha256::digest(sql.as_bytes()));
@@ -2684,6 +2691,107 @@ mod tests {
             .query_row("SELECT count(*) FROM repositories", [], |row| row.get(0))
             .unwrap();
         assert_eq!(repository_rows, 0);
+        assert_eq!(fs::read_dir(root.join("backups")).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn v4_project_is_backed_up_and_gains_empty_code_intelligence_without_rewriting_git_state() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("cp4-project");
+        fs::create_dir_all(&root).unwrap();
+        let project_id = new_id();
+        let repository_id = new_id();
+        let baseline_id = new_id();
+        let manifest = ProjectManifest::new(project_id.clone(), "CP4 fixture".into());
+        manifest.write_atomic(&root).unwrap();
+        let mut connection = open_connection(&manifest.ledger_path(&root)).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE schema_migrations(
+                    version INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    checksum TEXT NOT NULL,
+                    applied_at TEXT NOT NULL
+                );",
+            )
+            .unwrap();
+        for (version, name, sql) in [
+            (1_u32, "core", MIGRATION_1),
+            (2_u32, "contract_alignment", MIGRATION_2),
+            (3_u32, "research_core", MIGRATION_3),
+            (4_u32, "development_core", MIGRATION_4),
+        ] {
+            let checksum = hex::encode(Sha256::digest(sql.as_bytes()));
+            apply_single_migration(&mut connection, version, name, sql, &checksum).unwrap();
+        }
+        let now = Utc::now().to_rfc3339();
+        connection
+            .execute(
+                "INSERT INTO projects(id,name,status,lifecycle_version,ledger_sequence,created_at,updated_at)
+                 VALUES(?1,'CP4 fixture','active',1,0,?2,?2)",
+                params![project_id, now],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO space_capabilities(project_id,space,enabled,updated_at)
+                 VALUES(?1,'research',0,?2),(?1,'development',1,?2)",
+                params![project_id, now],
+            )
+            .unwrap();
+        for (id, entity_type, title) in [
+            (&repository_id, "repository", "Preserved repository"),
+            (&baseline_id, "repository_baseline", "Preserved baseline"),
+        ] {
+            connection.execute("INSERT INTO entities(id,project_id,entity_type,title,status,version,legacy_origin,data_json,
+                created_at,updated_at,entity_schema_version,origin_type,metadata_json,created_by,updated_by)
+                VALUES(?1,?2,?3,?4,'active',1,'system','{}',?5,?5,1,'deterministic','{}','continuum-core','continuum-core')",
+                params![id,project_id,entity_type,title,now]).unwrap();
+        }
+        let fingerprint = "a".repeat(64);
+        connection
+            .execute(
+                "INSERT INTO repositories(entity_id,project_id,root_path,root_fingerprint,
+            git_common_dir_fingerprint,object_format,adapter_version,attached_at,last_observed_at)
+            VALUES(?1,?2,'/fixture/repository',?3,?3,'sha1','continuum-git-v1',?4,?4)",
+                params![repository_id, project_id, fingerprint, now],
+            )
+            .unwrap();
+        connection.execute("INSERT INTO repository_baselines(entity_id,project_id,repository_id,head_oid,
+            head_ref,branch_name,worktree_fingerprint,worktree_status_json,observed_at,previous_baseline_id,
+            relation_to_previous,adapter_version)
+            VALUES(?1,?2,?3,?4,'refs/heads/main','main',?5,'[]',?6,NULL,'initial','continuum-git-v1')",
+            params![baseline_id,project_id,repository_id,"b".repeat(40),fingerprint,now]).unwrap();
+        drop(connection);
+
+        let store = ContinuityStore::open(&root).unwrap();
+        assert_eq!(
+            store.get_entity(&repository_id).unwrap().title,
+            "Preserved repository"
+        );
+        assert_eq!(
+            store.get_entity(&baseline_id).unwrap().title,
+            "Preserved baseline"
+        );
+        let connection = store.debug_connection().unwrap();
+        let version: u32 = connection
+            .query_row("SELECT max(version) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(version, CORE_SCHEMA_VERSION);
+        let analysis_rows: i64 = connection
+            .query_row("SELECT count(*) FROM analysis_runs", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(analysis_rows, 0);
+        let preserved_baseline: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM repository_baselines WHERE entity_id=?1 AND repository_id=?2",
+                params![baseline_id, repository_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(preserved_baseline, 1);
         assert_eq!(fs::read_dir(root.join("backups")).unwrap().count(), 1);
     }
 }

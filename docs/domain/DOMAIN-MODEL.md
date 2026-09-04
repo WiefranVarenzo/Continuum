@@ -1,6 +1,6 @@
 # Continuum Domain Model
 
-> **Status:** Approved baseline; provider/MCP provenance amendment accepted 2026-09-03; implemented through CP4
+> **Status:** Approved baseline; provider/MCP provenance amendment accepted 2026-09-03; implemented through CP5
 > **Scope:** Canonical vocabulary, ownership, lifecycle, relationships, provenance, and invariants.
 
 ## 1. Common Envelope
@@ -176,4 +176,8 @@ CP3 implements normalized ResearchSession, ResearchQuestion, Evidence, Experimen
 
 ## 12. CP4 Implemented Development Slice
 
-CP4 implements Repository attachment/relocation, immutable RepositoryBaseline and CommitObservation state, ordered file-diff observations, rewrite reconciliation, Development-created shared Requirements, working-tree and committed ChangeSets, explicit Requirement implementation and ChangeSet supersession links, Development timeline/search, Checkpoint/resume/report, migration, export/restore, and integrity behavior. CodeEntity, dependency/configuration, Test, and TestRun observations remain CP5-owned.
+CP4 implements Repository attachment/relocation, immutable RepositoryBaseline and CommitObservation state, ordered file-diff observations, rewrite reconciliation, Development-created shared Requirements, working-tree and committed ChangeSets, explicit Requirement implementation and ChangeSet supersession links, Development timeline/search, Checkpoint/resume/report, migration, export/restore, and integrity behavior.
+
+## 13. CP5 Implemented Code Intelligence Slice
+
+CP5 implements immutable AnalysisRuns, stable repository-scoped CodeEntity and Test identities, baseline-specific structural/dependency/configuration/test observations, explicit limitations, versioned analyzer cache, user-authored Test verification links, and immutable observed TestRuns. Current presence is projected as active or unavailable while historical observations remain immutable; committed rename and later reappearance preserve identity. CP6 owns full provenance traversal, graph gap validation, and LearningFeedback semantics.

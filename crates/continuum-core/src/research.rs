@@ -1071,12 +1071,12 @@ impl ContinuityStore {
     ) -> Result<ResearchItem> {
         validate_command_context(command)?;
         validate_nonempty(target_status, 50, "target status")?;
-        if let Some(note) = note {
-            if note.chars().count() > 10_000 {
-                return Err(CoreError::Validation(
-                    "transition note exceeds 10000 characters".into(),
-                ));
-            }
+        if let Some(note) = note
+            && note.chars().count() > 10_000
+        {
+            return Err(CoreError::Validation(
+                "transition note exceeds 10000 characters".into(),
+            ));
         }
         let mut connection = self.connection()?;
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;

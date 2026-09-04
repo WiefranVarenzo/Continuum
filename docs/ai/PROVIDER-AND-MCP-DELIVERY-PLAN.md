@@ -41,8 +41,9 @@ Continuum remains a local-first deterministic R&D continuity system. It becomes 
 
 ### CP5 — Code Intelligence
 
-- keep parser/analyzer output deterministic, versioned, and addressable;
-- declare unsupported/partial results so provider prompts and MCP responses cannot overstate certainty.
+- status: implemented and validated without provider or MCP coupling;
+- parser/analyzer output is deterministic, versioned, baseline-addressed, and cache-keyed;
+- unsupported/partial/dirty/unborn results are explicit so future provider prompts and MCP responses cannot overstate certainty.
 
 ### CP6 — Provenance & Knowledge Graph
 

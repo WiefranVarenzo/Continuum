@@ -1,6 +1,6 @@
 # Continuum Data Architecture
 
-> **Status:** Approved baseline; provider/MCP extension plan accepted 2026-09-03; implemented through schema v4
+> **Status:** Approved baseline; provider/MCP extension plan accepted 2026-09-03; implemented through schema v5
 > **Storage model:** SQLite canonical metadata + project-local content-addressed Artifact Store.
 
 ## 1. Data Authority
@@ -51,6 +51,8 @@ Space-specific normalized tables reference `entities.id` and are added in CP3–
 CP3 adds normalized `research_sessions`, `research_questions`, `evidence`, `experiments`, `results`, `findings`, `decisions`, `requirements`, `research_session_items`, append-only `research_timeline`, and rebuildable `research_search_documents`. Database type guards and the typed application API prevent partial Research aggregates.
 
 CP4 extends shared `requirements` with an explicit creation Space and adds `repositories`, immutable `repository_baselines`, immutable `git_commit_observations` and `git_commit_file_changes`, append-only `repository_reconciliations`, `change_sets`, `change_set_commits`, `change_set_file_changes`, append-only `development_timeline`, and rebuildable `development_search_documents`. Git objects remain external authority; normalized rows preserve exact observations and typed intent without storing repository credentials or replacing `.git`.
+
+CP5 adds immutable `analysis_runs`, `analyzer_executions`, `code_entity_observations`, `test_observations`, `test_runs`, `test_run_results`, and `analysis_limitations`; stable `code_entities`, `code_entity_aliases`, and `tests`; plus rebuildable `analyzer_cache`. Every structural observation cites an exact CP4 baseline. The cache key includes content, language, analyzer, analyzer version, and output schema, so it can be discarded without losing canonical truth.
 
 CP7 may add normalized `ai_provider_profiles` (non-secret configuration), `ai_tasks`, `ai_attempts`, `ai_candidates`, and `ai_candidate_sources`. CP11 may add `external_client_grants`, `external_client_sessions`, and `external_proposals`. Exact schemas belong to forward-only migrations in their owning checkpoints. No such table stores API keys, OAuth secrets, bearer tokens, or raw credential material.
 

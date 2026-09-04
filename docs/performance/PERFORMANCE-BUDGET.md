@@ -74,5 +74,6 @@ CP12 release requires ≥90% of normal interactive operations to meet Standard-f
 - CP2 core-scale evidence: `docs/cp2/CP2-BENCHMARK-2026-08-31.json` and CP2.1 evidence.
 - CP3 Research evidence: `docs/cp3/CP3-BENCHMARK-2026-09-02.json`.
 - CP4 incremental Git evidence: `docs/cp4/CP4-BENCHMARK-2026-09-03.json`; 100 new commits plus file diffs completed in approximately 1.11 seconds on the reference Ryzen 5 5600H/16 GB machine, below the 60-second target.
+- CP5 Code Intelligence evidence: `docs/cp5/CP5-BENCHMARK-2026-09-04.json`; a 500-file cold analysis completed in approximately 631 ms and one-changed-file incremental analysis over 501 files completed in approximately 200 ms with 500 cache hits and one miss, below the 5-second changed-file target.
 
 These checkpoint measurements validate their declared fixtures only. CP12 retains full Standard/stress, peak-resource, cancellation, background-load, and Windows certification responsibility.

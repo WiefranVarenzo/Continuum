@@ -1,10 +1,10 @@
 # Continuum - Product Requirements Document
 
-> **Status:** Approved product baseline; implementation validated through CP4
-> **Version:** 1.3.0
-> **Last updated:** 2026-09-03
+> **Status:** Approved product baseline; implementation validated through CP5
+> **Version:** 1.4.0
+> **Last updated:** 2026-09-04
 > **Primary source of truth:** This Markdown document  
-> **Product stage:** CP4 PASS - Ready for CP5 Code Intelligence
+> **Product stage:** CP5 PASS - Ready for CP6 Provenance & Knowledge Graph
 > **Change policy:** Material changes to product direction, domain boundaries, privacy posture, or checkpoint scope require an explicit decision record (ADR) and an update to this PRD.
 > **Related decisions:** [ADR-001 - Modular Spaces and Optional R&D Bridge](docs/adr/ADR-001-MODULAR-SPACES-AND-OPTIONAL-RD-BRIDGE.md); [ADR-006 - Provider-Neutral AI and MCP Boundaries](docs/adr/ADR-006-PROVIDER-NEUTRAL-AI-AND-MCP-BOUNDARIES.md)
 
@@ -825,6 +825,8 @@ Deliverables:
 Exit: a user can start from existing/manual/external development intent, ingest changes incrementally and reproducibly, document known and unknown rationale honestly, and resume without Research Space.
 
 ### CP5 - Code Intelligence
+
+Status: **PASS (validated 2026-09-04).** Architecture, schema v5, implementation, migration, traceability, acceptance, multi-language fixtures, benchmark, and validation evidence are recorded in `docs/cp5/`.
 
 Purpose: understand code structure deterministically.
 

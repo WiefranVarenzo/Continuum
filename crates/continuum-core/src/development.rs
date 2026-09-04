@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 use std::fs::{self, File};
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 use std::thread;
@@ -307,7 +307,7 @@ pub(crate) fn is_development_entity_type(value: &str) -> bool {
     matches!(
         value,
         "repository" | "repository_baseline" | "commit_observation" | "change_set"
-    )
+    ) || crate::code_intelligence::is_code_intelligence_entity_type(value)
 }
 
 pub(crate) fn validate_development_relationship_pair(
@@ -328,6 +328,11 @@ pub(crate) fn validate_development_relationship_pair(
             "implements" | "partially_implements" | "reverts",
             "requirement"
         ) | ("change_set", "supersedes", "change_set")
+            | ("repository", "defines", "code_entity" | "test")
+            | ("change_set", "modifies", "code_entity")
+            | ("test", "verifies", "requirement" | "code_entity")
+            | ("test_run", "executes", "test")
+            | ("test_run", "observed_at", "repository_baseline")
     );
     if valid {
         Ok(())
@@ -372,6 +377,15 @@ struct RawCommit {
     committed_at: String,
     subject: String,
     file_changes: Vec<FileChange>,
+}
+
+#[derive(Debug)]
+pub(crate) struct GitTreeFile {
+    pub path: String,
+    pub mode: String,
+    pub object_type: String,
+    pub object_id: String,
+    pub bytes: Option<Vec<u8>>,
 }
 
 #[derive(Debug)]
@@ -1707,6 +1721,14 @@ impl ContinuityStore {
                 link.relationship.as_str(),
             )?;
         }
+        crate::code_intelligence::link_change_set_to_known_code_entities(
+            &tx,
+            &self.manifest().project_id,
+            command,
+            &id,
+            &input.repository_id,
+            &input.baseline_id,
+        )?;
         if let Some(previous_id) = &input.supersedes_change_set_id {
             insert_development_relationship(
                 &tx,
@@ -2175,7 +2197,8 @@ impl ContinuityStore {
             ));
         }
         let active_items = active_development_items(&tx, &self.manifest().project_id, 2_001)?;
-        let source_count = repositories.len() * 2 + active_items.len();
+        let intelligence_items = latest_intelligence_items(&tx, &self.manifest().project_id)?;
+        let source_count = repositories.len() * 2 + active_items.len() + intelligence_items.len();
         if source_count > MAX_CHECKPOINT_SOURCES {
             return Err(CoreError::Conflict(format!(
                 "development checkpoint has {source_count} sources; narrow or archive state before exceeding {MAX_CHECKPOINT_SOURCES}"
@@ -2186,9 +2209,10 @@ impl ContinuityStore {
             [&self.manifest().project_id],
             |row| row.get(0),
         )?;
-        let summary = json!({"schema_version":1,"scope":"development",
+        let summary = json!({"schema_version":2,"scope":"development",
             "source_ledger_sequence":sequence,"note":input.note,"repositories":repositories,
             "active_items":active_items.iter().map(|item|json!({"id":item.id,"type":item.kind,"status":item.status})).collect::<Vec<_>>(),
+            "code_intelligence":intelligence_items.iter().map(|item|json!({"id":item.id,"type":item.kind,"status":item.status})).collect::<Vec<_>>(),
             "blockers":input.blockers,"next_actions":input.next_actions,"research_required":false,"complete":false});
         let summary_json =
             bounded_json(&summary, 2 * 1024 * 1024, "development checkpoint summary")?;
@@ -2208,6 +2232,9 @@ impl ContinuityStore {
             sources.insert(repository.baseline_id.clone(), repository.baseline_version);
         }
         for item in &active_items {
+            sources.insert(item.id.clone(), item.version);
+        }
+        for item in &intelligence_items {
             sources.insert(item.id.clone(), item.version);
         }
         for (source_id, version) in sources {
@@ -2347,7 +2374,8 @@ impl ContinuityStore {
         )?;
         let row_count: i64 = connection.query_row(
             "SELECT count(*) FROM entities WHERE project_id=?1 AND entity_type IN
-                ('repository','repository_baseline','commit_observation','change_set','requirement')",
+                ('repository','repository_baseline','commit_observation','change_set','requirement',
+                 'analysis_run','code_entity','test','test_run')",
             [&self.manifest().project_id],
             |row| row.get(0),
         )?;
@@ -2469,6 +2497,77 @@ impl ContinuityStore {
             )
             .expect("writing to String cannot fail");
         }
+        markdown.push_str("\n## Code Intelligence\n\n");
+        let mut statement = connection.prepare(
+            "SELECT e.id,ar.completeness,ar.file_count,ar.analyzed_file_count,
+                    ar.code_entity_count,ar.test_count,ar.limitation_count,
+                    ar.analyzer_bundle_version,ar.baseline_id
+             FROM analysis_runs ar JOIN entities e ON e.id=ar.entity_id
+             WHERE ar.project_id=?1 ORDER BY ar.completed_at,e.id",
+        )?;
+        let runs = statement
+            .query_map([&self.manifest().project_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, i64>(4)?,
+                    row.get::<_, i64>(5)?,
+                    row.get::<_, i64>(6)?,
+                    row.get::<_, String>(7)?,
+                    row.get::<_, String>(8)?,
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        for (id, completeness, files, analyzed, entities, tests, limitations, version, baseline) in
+            runs
+        {
+            cited.push(id.clone());
+            writeln!(markdown,
+                "- Analysis `{id}` at baseline `{baseline}`: `{completeness}`, {analyzed}/{files} structurally analyzed files, {entities} CodeEntities, {tests} Tests, {limitations} explicit limitations; bundle `{version}`."
+            ).expect("writing to String cannot fail");
+        }
+        let code_count: i64 = connection.query_row(
+            "SELECT count(*) FROM code_entities WHERE project_id=?1",
+            [&self.manifest().project_id],
+            |row| row.get(0),
+        )?;
+        let test_count: i64 = connection.query_row(
+            "SELECT count(*) FROM tests WHERE project_id=?1",
+            [&self.manifest().project_id],
+            |row| row.get(0),
+        )?;
+        writeln!(
+            markdown,
+            "\n- Current addressable inventory: {code_count} CodeEntities and {test_count} Tests."
+        )
+        .expect("writing to String cannot fail");
+        markdown.push_str("\n## Test Runs\n\n");
+        let mut statement = connection.prepare(
+            "SELECT e.id,e.title,tr.outcome,tr.command_label,tr.baseline_id,
+                    (SELECT count(*) FROM test_run_results rr WHERE rr.test_run_id=tr.entity_id)
+             FROM test_runs tr JOIN entities e ON e.id=tr.entity_id
+             WHERE tr.project_id=?1 ORDER BY tr.observed_at,e.id",
+        )?;
+        let test_runs = statement
+            .query_map([&self.manifest().project_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, i64>(5)?,
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        for (id, title, outcome, command_label, baseline, count) in test_runs {
+            cited.push(id.clone());
+            writeln!(markdown,"- **{}** (`{id}`): `{outcome}`, command `{}`, baseline `{baseline}`, {count} Test results.",
+                report_text(&title,300),report_text(&command_label,500))
+                .expect("writing to String cannot fail");
+        }
         let commit_count: i64 = connection.query_row(
             "SELECT count(*) FROM git_commit_observations WHERE project_id=?1",
             [&self.manifest().project_id],
@@ -2553,6 +2652,35 @@ fn active_development_items(
     )?;
     statement
         .query_map(params![project_id, limit as i64], |row| {
+            Ok(ActiveDevelopmentItem {
+                id: row.get(0)?,
+                kind: row.get(1)?,
+                title: row.get(2)?,
+                status: row.get(3)?,
+                version: row.get(4)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(Into::into)
+}
+
+fn latest_intelligence_items(
+    connection: &Connection,
+    project_id: &str,
+) -> Result<Vec<ActiveDevelopmentItem>> {
+    let mut statement = connection.prepare(
+        "SELECT e.id,e.entity_type,e.title,e.status,e.version FROM entities e
+         WHERE e.project_id=?1 AND (
+           e.id IN (SELECT ar.entity_id FROM analysis_runs ar WHERE ar.project_id=?1
+             AND ar.entity_id=(SELECT ar2.entity_id FROM analysis_runs ar2
+               WHERE ar2.repository_id=ar.repository_id ORDER BY ar2.completed_at DESC,ar2.entity_id DESC LIMIT 1))
+           OR e.id IN (SELECT tr.entity_id FROM test_runs tr WHERE tr.project_id=?1
+             AND tr.entity_id=(SELECT tr2.entity_id FROM test_runs tr2
+               WHERE tr2.repository_id=tr.repository_id ORDER BY tr2.observed_at DESC,tr2.entity_id DESC LIMIT 1)))
+         ORDER BY e.entity_type,e.id",
+    )?;
+    statement
+        .query_map([project_id], |row| {
             Ok(ActiveDevelopmentItem {
                 id: row.get(0)?,
                 kind: row.get(1)?,
@@ -2808,9 +2936,11 @@ pub(crate) fn append_development_integrity_issues(
         });
     }
     let mut statement = connection.prepare(
-        "SELECT id,source_entity_type,relation_type,target_entity_type FROM relationships
-         WHERE project_id=?1 AND (source_entity_type IN ('repository','repository_baseline','commit_observation','change_set')
-            OR target_entity_type IN ('repository','repository_baseline','commit_observation','change_set'))",
+         "SELECT id,source_entity_type,relation_type,target_entity_type FROM relationships
+         WHERE project_id=?1 AND (source_entity_type IN
+            ('repository','repository_baseline','commit_observation','change_set','analysis_run','code_entity','test','test_run')
+            OR target_entity_type IN
+            ('repository','repository_baseline','commit_observation','change_set','analysis_run','code_entity','test','test_run'))",
     )?;
     let rows = statement
         .query_map([project_id], |row| {
@@ -2925,10 +3055,10 @@ fn classify_baseline_relation(
     if previous.head_ref != current.head_ref {
         return Ok(BaselineRelation::BranchSwitch);
     }
-    if let (Some(old), Some(new)) = (previous.head_oid.as_deref(), current.head_oid.as_deref()) {
-        if is_ancestor(root, old, new)? {
-            return Ok(BaselineRelation::FastForward);
-        }
+    if let (Some(old), Some(new)) = (previous.head_oid.as_deref(), current.head_oid.as_deref())
+        && is_ancestor(root, old, new)?
+    {
+        return Ok(BaselineRelation::FastForward);
     }
     Ok(BaselineRelation::HistoryRewrite)
 }
@@ -2987,6 +3117,173 @@ fn inspect_repository(path: &Path) -> Result<RepositoryInspection> {
         root_path,
         object_format,
     })
+}
+
+pub(crate) fn read_repository_tree_files(
+    root: &Path,
+    head_oid: &str,
+    max_files: usize,
+    max_file_bytes: usize,
+    max_total_bytes: usize,
+) -> Result<Vec<GitTreeFile>> {
+    validate_oid(head_oid)?;
+    validate_repository_local_config(root)?;
+    ensure_commit_exists(root, head_oid)?;
+    let output = run_git(
+        root,
+        &["ls-tree", "-r", "-z", "-l", "--full-tree", head_oid],
+        MAX_GIT_OUTPUT_BYTES,
+    )?;
+    require_git_success("list baseline tree", &output)?;
+    let mut files = Vec::new();
+    let mut requested_blobs = Vec::new();
+    let mut requested_oids = HashSet::new();
+    let mut total_bytes = 0_usize;
+    for record in output
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|row| !row.is_empty())
+    {
+        if files.len() >= max_files {
+            return Err(CoreError::Conflict(format!(
+                "repository tree exceeds the configured {max_files}-file CP5 analysis limit"
+            )));
+        }
+        let tab = record
+            .iter()
+            .position(|byte| *byte == b'\t')
+            .ok_or_else(|| {
+                CoreError::Validation("malformed NUL-delimited git ls-tree output".into())
+            })?;
+        let header = std::str::from_utf8(&record[..tab])
+            .map_err(|_| CoreError::Validation("Git tree header must be UTF-8".into()))?;
+        let path = std::str::from_utf8(&record[tab + 1..])
+            .map_err(|_| {
+                CoreError::Validation(
+                    "non-UTF-8 Git paths are outside the CP5 analyzer contract".into(),
+                )
+            })?
+            .to_owned();
+        validate_git_relative_path(&path)?;
+        let mut fields = header.split_ascii_whitespace();
+        let mode = fields.next().unwrap_or_default().to_owned();
+        let object_type = fields.next().unwrap_or_default().to_owned();
+        let object_id = fields.next().unwrap_or_default().to_owned();
+        let size = fields.next().unwrap_or_default();
+        if fields.next().is_some()
+            || mode.is_empty()
+            || object_type.is_empty()
+            || object_id.is_empty()
+            || size.is_empty()
+        {
+            return Err(CoreError::Validation("malformed git ls-tree record".into()));
+        }
+        validate_oid(&object_id)?;
+        if object_type == "blob" {
+            let declared_size = size.parse::<usize>().map_err(|_| {
+                CoreError::Validation("Git blob size is malformed or unsupported".into())
+            })?;
+            if declared_size <= max_file_bytes {
+                total_bytes = total_bytes.checked_add(declared_size).ok_or_else(|| {
+                    CoreError::Conflict("CP5 analysis byte accounting overflow".into())
+                })?;
+                if total_bytes > max_total_bytes {
+                    return Err(CoreError::Conflict(format!(
+                        "repository tree exceeds the configured {max_total_bytes}-byte CP5 analysis limit"
+                    )));
+                }
+                if requested_oids.insert(object_id.clone()) {
+                    requested_blobs.push((object_id.clone(), declared_size));
+                }
+            }
+        }
+        files.push(GitTreeFile {
+            path,
+            mode,
+            object_type,
+            object_id,
+            bytes: None,
+        });
+    }
+    let blobs = read_git_blobs_batch(root, &requested_blobs, max_total_bytes)?;
+    for file in &mut files {
+        if let Some(bytes) = blobs.get(&file.object_id) {
+            file.bytes = Some(bytes.clone());
+        }
+    }
+    Ok(files)
+}
+
+fn read_git_blobs_batch(
+    root: &Path,
+    requested: &[(String, usize)],
+    max_total_bytes: usize,
+) -> Result<HashMap<String, Vec<u8>>> {
+    if requested.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let mut input = Vec::new();
+    for (oid, _) in requested {
+        input.extend_from_slice(oid.as_bytes());
+        input.push(b'\n');
+    }
+    let framing_allowance = requested
+        .len()
+        .checked_mul(160)
+        .ok_or_else(|| CoreError::Conflict("Git batch framing limit overflow".into()))?;
+    let output_limit = max_total_bytes
+        .checked_add(framing_allowance)
+        .ok_or_else(|| CoreError::Conflict("Git batch output limit overflow".into()))?;
+    let output = run_git_with_input(root, &["cat-file", "--batch"], input, output_limit)?;
+    require_git_success("read baseline blobs", &output)?;
+
+    let mut cursor = 0_usize;
+    let mut blobs = HashMap::with_capacity(requested.len());
+    for (expected_oid, expected_size) in requested {
+        let header_end = output.stdout[cursor..]
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map(|offset| cursor + offset)
+            .ok_or_else(|| CoreError::Validation("truncated git cat-file batch header".into()))?;
+        let header = std::str::from_utf8(&output.stdout[cursor..header_end])
+            .map_err(|_| CoreError::Validation("Git batch header must be UTF-8".into()))?;
+        let mut fields = header.split_ascii_whitespace();
+        let oid = fields.next().unwrap_or_default();
+        let object_type = fields.next().unwrap_or_default();
+        let size = fields
+            .next()
+            .and_then(|value| value.parse::<usize>().ok())
+            .ok_or_else(|| CoreError::Validation("malformed git cat-file batch size".into()))?;
+        if fields.next().is_some()
+            || oid != expected_oid
+            || object_type != "blob"
+            || size != *expected_size
+        {
+            return Err(CoreError::Conflict(format!(
+                "Git batch response did not match requested immutable blob {expected_oid}"
+            )));
+        }
+        let content_start = header_end + 1;
+        let content_end = content_start
+            .checked_add(size)
+            .ok_or_else(|| CoreError::Conflict("Git batch content offset overflow".into()))?;
+        if content_end >= output.stdout.len() || output.stdout[content_end] != b'\n' {
+            return Err(CoreError::Validation(
+                "truncated or malformed git cat-file batch payload".into(),
+            ));
+        }
+        blobs.insert(
+            expected_oid.clone(),
+            output.stdout[content_start..content_end].to_vec(),
+        );
+        cursor = content_end + 1;
+    }
+    if cursor != output.stdout.len() {
+        return Err(CoreError::Validation(
+            "unexpected trailing bytes in git cat-file batch output".into(),
+        ));
+    }
+    Ok(blobs)
 }
 
 fn validate_repository_local_config(root: &Path) -> Result<()> {
@@ -3479,6 +3776,84 @@ fn run_git(root: &Path, args: &[&str], stdout_limit: usize) -> Result<GitOutput>
     })
 }
 
+fn run_git_with_input(
+    root: &Path,
+    args: &[&str],
+    input: Vec<u8>,
+    stdout_limit: usize,
+) -> Result<GitOutput> {
+    let mut child = Command::new("git")
+        .current_dir(root)
+        .arg("-c")
+        .arg("core.fsmonitor=false")
+        .arg("-c")
+        .arg("core.untrackedCache=false")
+        .args(args)
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .env_remove("GIT_EXTERNAL_DIFF")
+        .env_remove("GIT_DIFF_OPTS")
+        .env_remove("GIT_CONFIG_COUNT")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| CoreError::Validation(format!("cannot start Git adapter: {error}")))?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| CoreError::Validation("Git stdin was unavailable".into()))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| CoreError::Validation("Git stdout was unavailable".into()))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| CoreError::Validation("Git stderr was unavailable".into()))?;
+    let stdin_writer = thread::spawn(move || -> std::io::Result<()> {
+        stdin.write_all(&input)?;
+        drop(stdin);
+        Ok(())
+    });
+    let stdout_reader = thread::spawn(move || read_limited(stdout, stdout_limit));
+    let stderr_reader = thread::spawn(move || read_limited(stderr, MAX_GIT_ERROR_BYTES));
+    let started = Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if started.elapsed() >= MAX_GIT_OPERATION {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(CoreError::Conflict(format!(
+                "Git operation exceeded {} seconds",
+                MAX_GIT_OPERATION.as_secs()
+            )));
+        }
+        thread::sleep(Duration::from_millis(10));
+    };
+    stdin_writer
+        .join()
+        .map_err(|_| CoreError::Validation("Git stdin writer failed".into()))??;
+    let (stdout, stdout_truncated) = stdout_reader
+        .join()
+        .map_err(|_| CoreError::Validation("Git stdout reader failed".into()))??;
+    let (stderr, stderr_truncated) = stderr_reader
+        .join()
+        .map_err(|_| CoreError::Validation("Git stderr reader failed".into()))??;
+    if stdout_truncated {
+        return Err(CoreError::Conflict(format!(
+            "Git output exceeded the {stdout_limit}-byte safety limit"
+        )));
+    }
+    Ok(GitOutput {
+        status,
+        stdout,
+        stderr,
+        stderr_truncated,
+    })
+}
+
 fn run_git_digest(root: &Path, args: &[&str], byte_limit: u64) -> Result<(Vec<u8>, u64)> {
     let mut child = Command::new("git")
         .current_dir(root)
@@ -3586,6 +3961,14 @@ fn git_failure(action: &str, output: &GitOutput) -> CoreError {
     CoreError::Validation(format!("cannot {action}: {message}"))
 }
 
+fn require_git_success(action: &str, output: &GitOutput) -> Result<()> {
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(git_failure(action, output))
+    }
+}
+
 fn output_text<'a>(bytes: &'a [u8], label: &str) -> Result<&'a str> {
     std::str::from_utf8(bytes)
         .map_err(|_| CoreError::Validation(format!("{label} must be valid UTF-8")))
@@ -3595,6 +3978,24 @@ fn utf8_git_path(bytes: &[u8]) -> Result<String> {
     let path = output_text(bytes, "Git path")?;
     validate_nonempty(path, 4096, "Git path")?;
     Ok(path.to_owned())
+}
+
+fn validate_git_relative_path(path: &str) -> Result<()> {
+    validate_nonempty(path, 4096, "Git path")?;
+    let parsed = Path::new(path);
+    if parsed.is_absolute()
+        || parsed.components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+    {
+        return Err(CoreError::Validation(
+            "Git tree path must remain repository-relative".into(),
+        ));
+    }
+    Ok(())
 }
 
 fn validate_oid(oid: &str) -> Result<()> {
@@ -3627,7 +4028,7 @@ fn excerpt(value: &str, max_chars: usize) -> String {
     value.chars().take(max_chars).collect()
 }
 
-fn reject_ai_actor(command: &CommandContext) -> Result<()> {
+pub(crate) fn reject_ai_actor(command: &CommandContext) -> Result<()> {
     if command.actor.kind == crate::ActorKind::AiProposal {
         return Err(CoreError::Validation(
             "AI proposals cannot execute canonical Development commands".into(),
@@ -3636,7 +4037,7 @@ fn reject_ai_actor(command: &CommandContext) -> Result<()> {
     Ok(())
 }
 
-fn require_development_enabled(connection: &Connection, project_id: &str) -> Result<()> {
+pub(crate) fn require_development_enabled(connection: &Connection, project_id: &str) -> Result<()> {
     let enabled: bool = connection
         .query_row(
             "SELECT enabled FROM space_capabilities WHERE project_id=?1 AND space='development'",
@@ -3654,7 +4055,7 @@ fn require_development_enabled(connection: &Connection, project_id: &str) -> Res
 }
 
 #[allow(clippy::too_many_arguments)]
-fn insert_common_entity(
+pub(crate) fn insert_common_entity(
     tx: &Transaction<'_>,
     project_id: &str,
     command: &CommandContext,
@@ -3690,7 +4091,7 @@ fn insert_common_entity(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn insert_development_timeline(
+pub(crate) fn insert_development_timeline(
     tx: &Transaction<'_>,
     project_id: &str,
     sequence: i64,
@@ -3723,7 +4124,7 @@ fn insert_development_timeline(
     Ok(())
 }
 
-fn upsert_development_search(
+pub(crate) fn upsert_development_search(
     tx: &Transaction<'_>,
     project_id: &str,
     entity_id: &str,

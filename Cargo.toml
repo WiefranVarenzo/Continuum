@@ -5,9 +5,11 @@ resolver = "2"
 [workspace.package]
 edition = "2024"
 license = "Apache-2.0"
-rust-version = "1.85"
+rust-version = "1.88"
 
 [workspace.dependencies]
+ast-grep-core = "=0.45.3"
+ast-grep-language = { version = "=0.45.3", default-features = false, features = ["tree-sitter-javascript", "tree-sitter-json", "tree-sitter-python", "tree-sitter-rust", "tree-sitter-typescript"] }
 chrono = { version = "0.4", features = ["serde"] }
 hex = "0.4"
 rusqlite = { version = "0.38", features = ["backup", "bundled"] }
@@ -16,5 +18,5 @@ serde_json = "1"
 sha2 = "0.10"
 tempfile = "3"
 thiserror = "2"
+toml = "=1.1.5"
 uuid = { version = "1", features = ["serde", "v7"] }
-

@@ -1,6 +1,6 @@
 # Continuum Privacy and Security Architecture
 
-> **Status:** Approved baseline; provider/MCP amendment accepted 2026-09-03; deterministic controls implemented through CP4
+> **Status:** Approved baseline; provider/MCP amendment accepted 2026-09-03; deterministic controls implemented through CP5
 > **Posture:** Local-first, least privilege, explicit external disclosure, untrusted inputs.
 
 ## 1. Trust Boundaries
@@ -41,6 +41,8 @@ Controls: default-private classification, secret scanning, transitive deny, prov
 Controls: retrieved material labelled as untrusted data, instruction/data separation, no model tools with ambient authority, schema validation, source-ID validation, and human review.
 
 CP4 additionally invokes Git through direct argument vectors without a shell, closes stdin, removes external-diff environment overrides, disables optional locks/filesystem monitors for observation, rejects repository-local executable clean/smudge/process filters and diff/text-conversion drivers, bounds stdout/stderr, enforces a deadline, rejects malformed/non-UTF-8 repository coordinates, and never executes repository content. Commit messages and paths remain untrusted display data.
+
+CP5 uses pinned embedded parsers and never launches repository-selected binaries, plugins, build scripts, package managers, language servers, or tests. Immutable blobs are read in a bounded, framed Git batch and verified against expected OID/type/size. Source bodies are not stored in structural observations or logs; dotenv values are omitted, credential-shaped dependency URIs are redacted, malformed/oversized/binary/dirty inputs degrade explicitly, and all output/counts are validated before atomic commit.
 
 ### Malicious path/archive/symlink
 
@@ -94,4 +96,4 @@ Windows 11 capture uses OS-supported screen capture and WASAPI-class audio adapt
 
 ## 8. Security Acceptance
 
-CP2 passes transaction, artifact, import-path, credential-location, and diagnostic foundations. CP4 passes canonical-path, direct Git invocation, bounded-output/deadline, immutable-observation, rewrite, and repository-drift foundations. Later owning checkpoints add prompt-injection, capture-consent, provider-routing/failover/conformance, analyzer, and MCP cross-project/revocation/authorization suites before their features ship.
+CP2 passes transaction, artifact, import-path, credential-location, and diagnostic foundations. CP4 passes canonical-path, direct Git invocation, bounded-output/deadline, immutable-observation, rewrite, and repository-drift foundations. CP5 passes embedded-analyzer, parser fallback, Git batch framing, resource-limit, secret-safe configuration, atomicity, integrity-corruption, and cross-project/cross-Repository suites. Later owning checkpoints add semantic prompt-injection, capture-consent, provider-routing/failover/conformance, and MCP revocation/authorization suites before their features ship.

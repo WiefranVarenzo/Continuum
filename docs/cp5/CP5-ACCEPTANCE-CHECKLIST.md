@@ -1,0 +1,41 @@
+# CP5 — Acceptance Checklist
+
+> **Result:** PASS
+
+- [x] CP5 consumes an exact CP4 RepositoryBaseline and never rewrites Git/CP4 history.
+- [x] Development-only analysis requires neither Research Space nor AI.
+- [x] AnalysisRun coordinate, limits, versions, counts, timing, cache metrics, completeness, and limitations are immutable.
+- [x] Identical analysis coordinate is idempotent.
+- [x] Rust, JavaScript/JSX, TypeScript/TSX, Python, and JSON grammars are embedded and pinned.
+- [x] Symbols have repository/file-scoped stable identity, qualified names, hashes, ranges, visibility, analyzer version, and exact source baseline.
+- [x] Cargo, npm, requirements, and pyproject dependency paths are deterministic and bounded.
+- [x] JSON/TOML configuration is validated; YAML/executable configuration is honestly recognition-only.
+- [x] Dotenv values are never persisted and credential-shaped dependency URIs are redacted.
+- [x] Rust, Python, and JavaScript-style tests are discovered without executing repository content.
+- [x] Test definition, verification claim, aggregate TestRun, and per-Test outcome remain distinct.
+- [x] Unsupported/binary/oversized files remain addressable through file-level fallback.
+- [x] Tree-sitter parse recovery is exposed as partial/parse-error state.
+- [x] Cached parse errors retain their limitation and never become falsely complete.
+- [x] Git symlink target bytes are never parsed as source code.
+- [x] Dirty working-tree paths do not receive stale structural claims from mutable bytes.
+- [x] Unborn Repository analysis is explicit and non-fabricating.
+- [x] Stable file identity survives a committed rename with CP4 evidence.
+- [x] Deleted code/tests become unavailable; reappearance restores the same identity.
+- [x] Returning to an older analyzed baseline safely reapplies current presence without duplicating the immutable AnalysisRun.
+- [x] Cache key contains content, language, analyzer, analyzer version, and output schema.
+- [x] Immutable Git blobs are fetched in one bounded, framed batch and duplicate object IDs are deduplicated.
+- [x] Default and hard file/byte/output limits fail before or roll back canonical persistence.
+- [x] Repository defines CodeEntity/Test and ChangeSet modifies file CodeEntity with source records.
+- [x] ChangeSet-to-file linking works regardless of creation order and preserves deletion links through aliases.
+- [x] Test verifies only Requirement/CodeEntity through explicit user-authored links.
+- [x] TestRun executes only same-Repository Tests and cites a same-Repository baseline.
+- [x] Generic Core APIs and undeclared relationship pairs cannot bypass typed CP5 contracts.
+- [x] AI proposal actors cannot mutate CP5 canonical state.
+- [x] Development search/timeline/report include CP5 state without claiming semantic inference.
+- [x] Development Checkpoint schema v2 cites latest AnalysisRun/TestRun as versioned sources.
+- [x] Export/restore preserves CP5 identity, observations, relationships, TestRuns, and integrity.
+- [x] Integrity diagnostics detect missing detail, mismatched counts/sources, invalid links, and projection gaps.
+- [x] v1–v4 projects are backed up and migrate safely to schema v5.
+- [x] CP2, CP3, and CP4 regression suites remain green.
+- [x] 500-file cold and one-changed-file incremental benchmark passes declared CP5 targets.
+- [x] Formatting, zero-warning lint, tests, dependency metadata, and documentation checks pass.
