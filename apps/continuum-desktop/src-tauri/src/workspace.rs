@@ -5,7 +5,7 @@ use continuum_core::{
 use std::fmt::Write as FmtWrite;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::time::{Duration, Instant};
 use tauri::{LogicalSize, PhysicalPosition, PhysicalSize};
 
@@ -275,12 +275,52 @@ fn client_executable_names(binary: &str, windows: bool) -> Vec<String> {
 }
 
 fn detected_ai_client(family: &str) -> Option<DetectedClient> {
-    let path = std::env::var_os("PATH")?;
+    let mut directories: Vec<PathBuf> = std::env::var_os("PATH")
+        .into_iter().flat_map(|path| std::env::split_paths(&path).collect::<Vec<_>>()).collect();
+    #[cfg(windows)]
+    {
+        if let Some(roaming) = std::env::var_os("APPDATA") {
+            directories.push(PathBuf::from(roaming).join("npm"));
+        }
+        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+            let local = PathBuf::from(local);
+            if family == "codex" {
+                // The desktop app ships a native CLI in a versioned cache which
+                // is not added to PATH. Discover each installed version locally.
+                directories.extend(codex_app_binary_directories(&local.join("OpenAI/Codex/bin")));
+            }
+            directories.push(local.join("Microsoft/WindowsApps"));
+        }
+        if let Some(profile) = std::env::var_os("USERPROFILE") {
+            let profile = PathBuf::from(profile);
+            directories.push(profile.join(".local/bin"));
+            directories.push(profile.join(".codex/bin"));
+            directories.push(profile.join(".cargo/bin"));
+        }
+    }
+    find_ai_client(family, &directories)
+}
+
+#[cfg(windows)]
+fn codex_app_binary_directories(root: &Path) -> Vec<PathBuf> {
+    let mut versions: Vec<_> = fs::read_dir(root).into_iter().flatten().flatten()
+        .filter_map(|entry| {
+            let metadata = entry.metadata().ok()?;
+            (metadata.is_dir() && entry.path().join("codex.exe").is_file())
+                .then(|| (metadata.modified().ok(), entry.path()))
+        }).collect();
+    versions.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    let mut directories: Vec<_> = versions.into_iter().map(|(_, path)| path).collect();
+    directories.push(root.to_path_buf());
+    directories
+}
+
+fn find_ai_client(family: &str, directories: &[PathBuf]) -> Option<DetectedClient> {
     ai_client_specs()
         .into_iter()
         .find(|(candidate, _, _)| *candidate == family)
         .and_then(|(family, name, binary)| {
-            std::env::split_paths(&path)
+            directories.iter()
                 .filter(|p| p.is_absolute())
                 .find_map(|dir| client_executable_names(binary, cfg!(windows)).into_iter().find_map(|file_name| {
                     let candidate = dir.join(file_name);
@@ -312,6 +352,17 @@ pub fn detect_ai_clients() -> Vec<DetectedClient> {
         .collect()
 }
 
+#[cfg(windows)]
+fn stable_mcp_server(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    use tauri::Manager;
+    // A Windows installation has a persistent location. Use its packaged server
+    // directly so it can also find the bundled Git runtime beside the application.
+    let executable = app.path().resource_dir().map_err(|error| error.to_string())?.join("continuum-mcp.exe");
+    if !executable.is_file() { return Err("The MCP server is missing. Reinstall the complete Continuum Windows package.".into()); }
+    Ok(executable)
+}
+
+#[cfg(not(windows))]
 fn stable_mcp_server(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     use tauri::Manager;
     let executable = app
@@ -417,7 +468,15 @@ fn run_client_config_query(
     arguments: &[String],
     secret: &str,
 ) -> Result<String, String> {
-    let output = Command::new(executable)
+    run_client_config_query_at_home(executable, arguments, secret, None)
+}
+
+fn run_client_config_query_at_home(
+    executable: &Path, arguments: &[String], secret: &str, codex_home: Option<&Path>,
+) -> Result<String, String> {
+    let mut command = crate::platform::command(executable);
+    if let Some(home) = codex_home { command.env("CODEX_HOME", home); }
+    let output = command
         .args(arguments)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -738,7 +797,7 @@ fn run_codex_organizer(input: OrganizerInput, progress: impl Fn(u64)) -> Result<
         fs::set_permissions(&job, fs::Permissions::from_mode(0o700)).map_err(|error| error.to_string())?;
     }
     let result = (|| {
-        let check = Command::new(&input.executable)
+        let check = crate::platform::command(&input.executable)
             .args(["mcp", "get", &input.server_name])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -797,7 +856,7 @@ Explain uncertainty and do not invent unreadable details. Finish with a short co
         let stderr_path = job.join("stderr.log");
         let stdout = fs::File::create(&stdout_path).map_err(|error| error.to_string())?;
         let stderr = fs::File::create(&stderr_path).map_err(|error| error.to_string())?;
-        let mut command = Command::new(&input.executable);
+        let mut command = crate::platform::command(&input.executable);
         command.args([
             "exec", "--ephemeral", "--sandbox", "read-only", "--skip-git-repo-check",
             "--color", "never", "--json", "--cd",
@@ -1039,6 +1098,10 @@ mod tests {
     use super::{client_executable_names, configured_server_matches, thumbnail_png};
     use image::{DynamicImage, ImageFormat};
     use std::io::Cursor;
+    #[cfg(windows)]
+    use std::{fs, path::PathBuf};
+    #[cfg(windows)]
+    use super::{codex_app_binary_directories, find_ai_client, detected_ai_client, run_client_config_query_at_home};
 
     #[test]
     #[ignore = "Requires an explicitly chosen local project and signed-in Codex; creates review-only proposals"]
@@ -1102,6 +1165,47 @@ mod tests {
             "command: \"C:\\Program Files\\Continuum\\continuum-mcp.exe\"",
             "C:\\Program Files\\Continuum\\continuum-mcp.exe",
         ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn codex_app_is_detected_in_its_versioned_cache_without_a_path_entry() {
+        let fixture = tempfile::tempdir().unwrap();
+        let cache = fixture.path().join("OpenAI/Codex/bin");
+        fs::create_dir_all(cache.join("installed-version")).unwrap();
+        fs::create_dir_all(cache.join("incomplete-version")).unwrap();
+        let executable = cache.join("installed-version/codex.exe");
+        fs::write(&executable, "fixture").unwrap();
+        let directories = codex_app_binary_directories(&cache);
+        let client = find_ai_client("codex", &directories).unwrap();
+        assert_eq!(PathBuf::from(client.executable), executable);
+        assert!(find_ai_client("codex", &[]).is_none());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "Uses the installed native Codex CLI with an isolated temporary configuration."]
+    fn installed_codex_mcp_configuration_roundtrip() {
+        let client = detected_ai_client("codex").expect("Installed Codex CLI/app not found");
+        let fixture = tempfile::tempdir().unwrap();
+        let home = fixture.path().join("Private Codex Home");
+        fs::create_dir_all(&home).unwrap();
+        let executable = PathBuf::from(client.executable);
+        let server = fixture.path().join("Server with spaces/continuum-mcp.exe");
+        let server_text = server.to_string_lossy().into_owned();
+        let secret = "continuum-test-fixture-secret-not-a-real-user-token";
+        let environment = format!("CONTINUUM_MCP_GRANT_TOKEN={secret}");
+        let args = ["mcp", "add", "continuum-test-fixture", "--env", &environment, "--", &server_text, "--project", "C:\\Fixture Project"]
+            .map(str::to_owned).to_vec();
+        run_client_config_query_at_home(&executable, &args, secret, Some(&home)).unwrap();
+        let args = ["mcp", "get", "continuum-test-fixture"].map(str::to_owned).to_vec();
+        let details = run_client_config_query_at_home(&executable, &args, secret, Some(&home)).unwrap();
+        assert!(configured_server_matches("codex", &details, &server_text));
+        assert!(!details.contains(secret), "The inspection must not reveal the access secret");
+        let args = ["mcp", "remove", "continuum-test-fixture"].map(str::to_owned).to_vec();
+        run_client_config_query_at_home(&executable, &args, secret, Some(&home)).unwrap();
+        let args = ["mcp", "get", "continuum-test-fixture"].map(str::to_owned).to_vec();
+        assert!(run_client_config_query_at_home(&executable, &args, secret, Some(&home)).is_err());
     }
 
     #[test]

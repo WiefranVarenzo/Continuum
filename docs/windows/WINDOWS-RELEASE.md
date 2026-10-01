@@ -1,45 +1,60 @@
-# Continuum for Windows x64 — build and release gate
+# Continuum 0.12.0 for Windows x64
 
-This document describes the Windows port, not a claim that an installer has already been validated on Windows. Keep the existing Linux AppImage build and its PipeWire recorder unchanged. The Windows package is an NSIS `*-setup.exe` installer built with Tauri's `tauri.windows.conf.json` overlay; its bundled `continuum-mcp.exe` must be from the same Windows target.
+> **2026-10-01 update:** the latest local package is Windows **fix2**, including microphone device selection/gain/test/meter. Physical microphone input is still unresolved on the reference VirtualBox guest. See [fix2 evidence and hashes](../releases/WINDOWS-0.12.0-fix2.md), the [complete build guide](../development/BUILD-AND-DEVELOP.md), [cross-platform architecture](../architecture/CROSS-PLATFORM-ARCHITECTURE.md), and [release publishing](../releases/PUBLISHING.md). The validation counts below describe earlier repair stages.
 
-## Build on a Windows machine
+The Windows app shares the Linux 0.12.0 domain, schema, frontend, commands and MCP protocol. Platform adapters and packaging differ. Linux portal/PipeWire/GStreamer capture and AppImage packaging remain in place.
 
-Install Microsoft C++ Build Tools, Rust with `x86_64-pc-windows-msvc`, Node.js 22, and Git for Windows. Tauri's NSIS installer will arrange the WebView2 runtime when necessary. From the repository root:
+## Build
+
+Install Node.js 22, Rust and Microsoft C++ Build Tools with the Windows SDK. The default target is x86_64-pc-windows-msvc.
 
 ```powershell
+cargo test --workspace
 cd apps/continuum-desktop
 npm ci
 npm test
+node scripts/prepare-windows.mjs
 cd ../..
-cargo test -p continuum-core --lib
+cargo test --manifest-path apps/continuum-desktop/src-tauri/Cargo.toml
 cd apps/continuum-desktop
 npm run build:windows
 ```
 
-The installer should appear under `apps/continuum-desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/`. Do not distribute a build merely because these commands succeed. The installer is unsigned until a trusted Windows code-signing process is configured. A manually triggered Windows workflow in `.github/workflows/windows-desktop.yml` runs these steps and uploads the unsigned installer artifact after the repository is connected to GitHub.
+The preparation script builds the matching MCP server, stages checksum-pinned official portable tools and builds the frontend. NSIS installs for the current user and provisions WebView2 when missing. Installers appear under apps/continuum-desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/.
 
-## Windows behavior
+The Windows-native GNU alternative needs the x86_64-pc-windows-gnu Rust target and compatible MinGW-w64 GCC: run npm run build:windows:gnu. This migration was built/tested with that target. Include the generated WebView2Loader.dll in portable packages; the bare executable is incomplete. NSIS includes the loader. Linux cross-builds use npm run build:windows:cross, cargo-xwin and unzip; cross-building does not validate Windows runtime behavior.
 
-- Research projects, evidence originals, workspace positions/connections, bookmarks, context, messages, markdown reports and exports use the same project format as Linux. Move a complete project through Continuum's project export/import; do not copy only its SQLite file and expect media to follow.
-- Windows capture uses the operating system's WebView2 share dialog and `MediaRecorder`. Linux remains on its native portal/PipeWire implementation. The capture UI must ask permission from the user for each recording. A selected source that does not supply an audio track fails rather than being labeled as a successful system-audio recording.
-- Microphone needs Windows Settings → Privacy & security → Microphone access enabled. System audio requires a share choice that offers audio, with **Share audio** enabled in the chooser. Availability may vary by the selected screen/window and installed WebView2 runtime. Do not promise all three sources until the actual Windows acceptance test passes.
-- The Development Git adapter uses Git for Windows. It searches `PATH` and common Git for Windows installation folders; the Git executable is an external prerequisite, not silently included in this installer.
-- Codex/Gemini/Claude connections use the Windows MCP executable packaged with Continuum. CLI detection accepts both `.exe` and the `.cmd` shims commonly installed by npm. Each connection still requires a real successful MCP tool call and a user-granted scope; merely finding or installing a client does not prove integration.
-- Exported HTML/Markdown reports open through the Windows shell's file association. The verified export is not run through `cmd.exe`.
+Build tools use target/.tauri instead of a global cache. The GitHub Windows workflow builds/tests MSVC. Installers remain unsigned until the owner supplies a signing identity.
 
-## Release acceptance on a real Windows 10/11 x64 machine
+## Windows adapters
 
-Use a non-sensitive disposable project. Record Windows version, WebView2 runtime version, installer checksum, and results. Test every item on the installed `.exe`, not only a browser preview.
+- Screen capture uses WebView2's Windows screen/window chooser and the shared segmented MediaRecorder pipeline. Linux retains its native portal recorder.
+- System audio uses WASAPI loopback from the default output device, converted to 48 kHz stereo PCM16. Audio-only recording needs no screen chooser. AudioWorklet renders on the audio thread with a bounded 250 ms stereo queue and 100 ms prefill. Brief IPC/UI delays rebuffer with silence and discard stale backlog rather than stopping the recording. A genuinely stalled receiver or hardware error still stops capture safely. Older WebViews retain a bounded scheduling fallback.
+- Microphone uses WebView2 with a per-request Windows permission prompt. Its parent window is resolved from the initialized WebView2 controller, avoiding a startup race with the runtime's raw window handle. Only the local app origin can receive permission. Camera and remote/lookalike origins are denied. Windows microphone privacy settings still apply. The shared frontend mixes microphone, system audio and screen sources.
+- Official Git for Windows 2.56.0, Git LFS 3.8.0 and GitHub CLI 2.102.0 are bundled with licenses and URL/SHA-256 provenance in tools/UPSTREAM.json. Child processes get a private tool PATH; global PATH/Git config are unchanged. Existing installations remain fallbacks.
+- GitHub device login opens through the Windows shell. Its CLI configuration is isolated under %LOCALAPPDATA%/continuum/github-cli. The asynchronous repository/branch picker and explicit snapshot publish/independent restore retain LFS media. No implicit merge or force-push was added.
+- Codex, Claude and Gemini use the packaged Windows MCP executable beside its tools. Client discovery accepts .exe and npm .cmd shims. Windows Codex discovery also finds valid versioned binaries under %LOCALAPPDATA%/OpenAI/Codex/bin, newest first, even when PATH lacks the desktop app. An explicitly configured CODEX_HOME is preserved. Existing copied MCP connections may require reconnection; a real model tool call remains part of live acceptance.
+- Folder names reject Windows reserved devices/invalid characters. Artifact and repository reads reject reparse-point files. Safe Unicode and spaces remain supported.
+- Release apps and background Git/GitHub/AI processes hide console windows. Reports/browser links use Windows shell associations.
 
-1. Install, launch from the Start menu, close with X, reopen, then uninstall/reinstall. Verify existing projects remain available after reinstall and no prior project is modified without opening it.
-2. Create a Research-only project, a Development-only project, and a combined project. Reopen each and verify Home/recent list and capability gates.
-3. Create a research question; paste, drag, import, and screenshot an image; add titles/descriptions; connect, delete, undo/redo, auto-arrange, and full-screen the workspace. Reopen and verify cards, media, positions, links, and history.
-4. Capture **Screen only**, **Microphone only**, **System audio only**, **Screen + Microphone**, **Screen + System audio**, and **Screen + System audio + Microphone** separately. For every supported combination, record 5–10 seconds, stop, save, play from the Workspace, check moving video and audible selected sources, then reopen the project and replay. If the Windows chooser lacks system audio, record that limitation explicitly; never mark it as passed.
-5. Deny screen and microphone permissions, cancel the chooser, switch audio devices, stop a capture early, and close the app while capture is active. Verify clear errors, stopped sensors, recoverable fragments where applicable, and no false “saved” state.
-6. Attach a Git repository; inspect commits, worktree changes, code intelligence, and development status. Repeat with Git unavailable and verify the application explains the prerequisite rather than silently failing.
-7. Generate/edit a Markdown-first report with a Mermaid diagram and media references; export HTML and Markdown; open each in default Windows apps; verify diagrams render, source links and images resolve, and no raw HTML is shown as plain text.
-8. Connect a real installed Codex CLI client, verify one successful MCP call, run analysis, review proposals, ask Messages about saved evidence, save a bookmark, reopen and verify context. Confirm no AI-generated interpretation becomes verified knowledge without review.
-9. Export a project on Linux, import it on Windows, compare project counts, source/media hashes, workspace layout, reports, messages, and bookmarks. Then export from Windows and import into a fresh Linux project. Protect original projects during this test.
-10. Test paths with spaces, Indonesian text, and long names; a standard user account; offline launch after installation; missing WebView2/Git/client prerequisites; and Windows Defender/SmartScreen behavior for the unsigned installer.
+## Feature coverage
 
-Do not call the Windows port feature-equivalent until all relevant checks pass. A CI build and Linux-side unit tests cannot prove screen/audio permissions, playback, native installer behavior, or AI-client integration on Windows.
+The shared source retains Research-only, Development-only and combined projects; questions/evidence; capture history/markers; original artifacts/integrity; workspace cards, connections, layout and undo/redo; bookmarks/checkpoints; Git observations/code intelligence; reports/exports; Messages; context packs; reviewable AI proposals; MCP grants/audit; backup/import/restore; and GitHub snapshots. No reduced Windows UI/database was introduced.
+
+Transfer complete projects through export/import, including artifacts. Copying SQLite alone omits media. Repository and installed-client paths are machine-specific; relocate/reconnect after moving between operating systems.
+
+## Validation and remaining checks
+
+Windows baseline validation: 149 core/MCP tests passed. The subsequent audio/layout/Codex repair passed 91 frontend tests and 16 desktop tests. The installed Codex CLI also passed an isolated MCP configuration add/get/remove roundtrip; WASAPI captured a generated tone and restarted successfully. A production AudioWorklet browser recording survived 650 ms and 900 ms UI stalls and decoded as stereo audio. Production frontend builds passed. The delivery report records packaged-server and installer results.
+
+Automated contracts do not certify every physical device/account. On a disposable project, complete these live checks before claiming full platform equivalence:
+
+1. Install, launch, reopen, uninstall/reinstall preserving projects; offline launch after WebView2 installation.
+2. Create/reopen all project modes. Exercise import/paste/drag, workspace history, reports, bookmarks, Messages and integrity.
+3. Record/save/replay/reopen screen, microphone, system audio and all combinations. Check cancellation, denial, device removal, sleep/resume and long sessions.
+4. Attach/analyze/relocate a repository. Sign into GitHub, choose a real repository/branch, publish media and restore independently.
+5. Connect a real AI CLI, perform a scoped MCP call, review proposals and revoke access.
+6. Export Linux -> import Windows -> export Windows -> import fresh Linux. Compare artifact hashes, history, reports, layouts and bookmarks; preserve originals.
+7. Check Windows 10/11 x64, standard-user permissions, Indonesian/space-containing paths, accessibility and unsigned-installer behavior.
+
+Unchecked physical capture, real-account integration, cross-machine round-trip, signing and soak tests must remain explicitly unverified.

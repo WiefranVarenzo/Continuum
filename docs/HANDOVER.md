@@ -1,5 +1,7 @@
 # Continuum — handover teknis
 
+> **Update Windows — 2 Oktober 2026:** source port dan installer GNU fix2 kini ditambahkan, dengan core/UI/proyek yang sama. Pengujian Windows lokal serta issue mikrofon VirtualBox dicatat di [fix2](releases/WINDOWS-0.12.0-fix2.md). Rilis dan native recorder Linux tetap dipertahankan. Mulai dari [arsitektur lintas platform](architecture/CROSS-PLATFORM-ARCHITECTURE.md) dan [build guide](development/BUILD-AND-DEVELOP.md); status historis di bawah bukan klaim kualifikasi Windows terbaru.
+
 Dokumen ini adalah titik masuk untuk maintainer manusia maupun AI coding assistant. Baca [README](../README.md) untuk alur pengguna, [MAINTAINER-GUIDE](MAINTAINER-GUIDE.md) untuk cara mengubah dan menguji, lalu rujuk desain CP/ADR yang relevan. Periksa kode sebelum menganggap dokumen lama menggambarkan perilaku terbaru.
 
 ## Status dan batas rilis (1 Oktober 2026)

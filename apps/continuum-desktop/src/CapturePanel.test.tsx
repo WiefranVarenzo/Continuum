@@ -2,6 +2,15 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CapturePanel } from "./CapturePanel";
 import {invoke} from "@tauri-apps/api/core";
+import {desktopAudio} from "./systemAudio";
+import {microphoneConstraints,microphoneAudio} from "./microphone";
+vi.mock("./microphone",async(original)=>({...await original<typeof import("./microphone")>(),microphoneAudio:vi.fn()}));
+
+vi.mock("./systemAudio",()=>({desktopAudio:vi.fn()}));
+vi.mock("./captureMedia",async(importOriginal)=>({
+  ...await importOriginal<typeof import("./captureMedia")>(),
+  relayScreen:vi.fn(async(stream:MediaStream)=>({stream,release:()=>{}})),
+}));
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -136,4 +145,70 @@ describe("CP9 capture consent boundary", () => {
     expect(vi.mocked(invoke).mock.calls.some(call=>call[0]==="start_native_screen_capture")).toBe(false);
     expect(getUserMedia).not.toHaveBeenCalled();
   });
+  it.each([[false,false],[false,true],[true,false],[true,true]])(
+    "uses WASAPI for Windows system audio with screen=%s microphone=%s and releases partial grants on failure",
+    async(withScreen,withMicrophone)=>{
+      vi.mocked(invoke).mockImplementation(async(command)=>command==="capture_runtime_health"?{
+        platform:"windows",native_screen_available:false,native_system_audio_available:true,
+        summary:"Windows WASAPI is ready.",
+      }:{items:[],next_offset:null});
+      vi.mocked(desktopAudio).mockRejectedValue(new Error("WASAPI output device disconnected"));
+      const video={kind:"video",stop:vi.fn()};
+      const voice={kind:"audio",stop:vi.fn()};
+      const stream=(tracks:typeof video[])=>({getTracks:()=>tracks,getVideoTracks:()=>tracks.filter(t=>t.kind==="video"),getAudioTracks:()=>tracks.filter(t=>t.kind==="audio")}) as unknown as MediaStream;
+      const getDisplayMedia=vi.fn().mockResolvedValue(stream([video]));
+      const getUserMedia=vi.fn().mockResolvedValue(stream([voice]));
+      Object.defineProperty(navigator,"mediaDevices",{configurable:true,value:{getDisplayMedia,getUserMedia}});
+      vi.stubGlobal("MediaRecorder",class {static isTypeSupported(){return true;}});
+      vi.stubGlobal("AudioContext",class {resume(){return Promise.resolve();}close(){return Promise.resolve();}});
+      render(<CapturePanel projectOpen researchEnabled projectId="project"/>);
+      await screen.findByText(/Windows WASAPI is ready/);
+      if(!withScreen)fireEvent.click(screen.getByLabelText("Screen"));
+      fireEvent.click(screen.getByLabelText("System audio"));
+      if(withMicrophone)fireEvent.click(screen.getByLabelText("Microphone"));
+      fireEvent.click(screen.getByLabelText("I confirm I have permission to capture this screen and audio."));
+      fireEvent.click(screen.getByRole("button",{name:"Start capture"}));
+      await screen.findByText(/WASAPI output device disconnected/);
+      expect(desktopAudio).toHaveBeenCalled();
+      if(withScreen){expect(getDisplayMedia).toHaveBeenCalledWith({video:true,audio:false});expect(video.stop).toHaveBeenCalled();}
+      else expect(getDisplayMedia).not.toHaveBeenCalled();
+      if(withMicrophone){expect(getUserMedia).toHaveBeenCalledWith(microphoneConstraints());expect(voice.stop).toHaveBeenCalled();}
+      else expect(getUserMedia).not.toHaveBeenCalled();
+      expect(vi.mocked(invoke).mock.calls.some(call=>call[0]==="create_capture_session")).toBe(false);
+    });
+});
+
+describe("Microphone input check",()=>{
+ it("requires consent, uses the chosen device and volume, and saves no capture",async()=>{
+  vi.mocked(invoke).mockImplementation(async(command)=>command==="capture_runtime_health"?{platform:"windows",native_screen_available:false,summary:"Ready"}:{items:[],next_offset:null});
+  const stop=vi.fn(),release=vi.fn(),setGain=vi.fn();
+  const input={getTracks:()=>[{stop}],getAudioTracks:()=>[{stop}]} as unknown as MediaStream;
+  const getUserMedia=vi.fn().mockResolvedValue(input);
+  Object.defineProperty(navigator,"mediaDevices",{configurable:true,value:{getUserMedia,enumerateDevices:vi.fn().mockResolvedValue([
+   {kind:"audioinput",deviceId:"usb-mic",label:"USB microphone"},
+   {kind:"audiooutput",deviceId:"speaker",label:"Speaker"},
+  ])}});
+  vi.stubGlobal("AudioContext",class {resume(){return Promise.resolve();}close(){return Promise.resolve();}});
+  vi.mocked(microphoneAudio).mockImplementation((_stream,_context,_gain,onLevel)=>{
+   onLevel({label:"USB microphone",level:.7,received:true,muted:false,silent:false,suspended:false});
+   return {stream:input,release,setGain};
+  });
+  const view=render(<CapturePanel projectOpen researchEnabled/>);
+  fireEvent.click(screen.getByLabelText("Microphone"));
+  const test=screen.getByRole("button",{name:"Test microphone"});expect(test).toBeDisabled();
+  await screen.findByRole("option",{name:"USB microphone"});
+  fireEvent.change(screen.getByLabelText("Microphone input"),{target:{value:"usb-mic"}});
+  fireEvent.click(screen.getByLabelText("I confirm I have permission to capture this screen and audio."));
+  fireEvent.click(test);
+  await screen.findByText("Microphone signal received.");
+  expect(getUserMedia).toHaveBeenCalledWith(microphoneConstraints("usb-mic"));
+  fireEvent.change(screen.getByRole("slider",{name:/Microphone volume/}),{target:{value:"200"}});
+  expect(setGain).toHaveBeenCalledWith(2);
+  expect(screen.getByRole("button",{name:"Start capture"})).toBeDisabled();
+  fireEvent.click(screen.getByRole("button",{name:"Stop microphone test"}));
+  await screen.findByText("Microphone test finished. No recording was saved.");
+  expect(stop).toHaveBeenCalledOnce();expect(release).toHaveBeenCalledOnce();
+  expect(vi.mocked(invoke).mock.calls.some(call=>call[0]==="create_capture_session")).toBe(false);
+  view.unmount();
+ });
 });

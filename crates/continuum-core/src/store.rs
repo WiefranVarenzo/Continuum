@@ -2403,7 +2403,19 @@ fn open_regular_file_nofollow(path: &Path) -> Result<fs::File> {
         use std::os::unix::fs::OpenOptionsExt;
         options.custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
     }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT
+    }
     let file = options.open(path)?;
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if file.metadata()?.file_attributes() & 0x00000400 != 0 {
+            return Err(CoreError::Validation("artifact source must not be a Windows reparse point".into()));
+        }
+    }
     if !file.metadata()?.is_file() {
         return Err(CoreError::Validation(
             "artifact source must be a regular file".into(),

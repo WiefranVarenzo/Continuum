@@ -3,7 +3,7 @@ use continuum_core::{WorkspaceDocument, ContextAudience};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::io::{Read, Write};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::time::{Duration, Instant};
 use tauri::Emitter;
 
@@ -197,7 +197,7 @@ pub async fn run_workspace_assistant(request:AssistantRequest,state:State<'_,App
         let text=json!({"type":"string"});
         let shape=object(json!({"markdown":text,"connections":{"type":"array","items":object(json!({"source":text,"target":text,"label":text,"reason":text}),json!(["source","target","label","reason"]))},"notes":{"type":"array","items":object(json!({"id":text,"title":text,"description":text}),json!(["id","title","description"]))}}),json!(["markdown","connections","notes"]));
         fs::write(&schema,shape.to_string()).map_err(|e|e.to_string())?;
-        let mut command=Command::new(executable);
+        let mut command=crate::platform::command(executable);
         command.current_dir(&job.0);
         if request.agent=="hermes" {
             command.args(["chat","--oneshot","--quiet","--safe-mode","--toolsets","none","--max-turns","4","--source","tool","--query-file","-"]);

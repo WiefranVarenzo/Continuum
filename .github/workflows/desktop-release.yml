@@ -1,0 +1,136 @@
+name: Linux and Windows desktop packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      publish_draft:
+        description: 'Create a draft release after both builds pass (run on an existing v* tag)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }} x64
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            os: ubuntu-24.04
+            target: native
+          - platform: windows
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/continuum-desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux native and media dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config curl wget file patchelf \
+            libgtk-3-dev libwebkit2gtk-4.1-dev libssl-dev libxdo-dev \
+            libayatana-appindicator3-dev librsvg2-dev libfuse2t64 \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            gstreamer1.0-tools gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
+            gstreamer1.0-plugins-ugly gstreamer1.0-libav \
+            gstreamer1.0-pipewire gstreamer1.0-gl pulseaudio-utils
+          chmod +x packaging/prepare-gstreamer-plugins.sh packaging/check-recording-runtime.sh
+      - name: Install frontend dependencies
+        working-directory: apps/continuum-desktop
+        run: npm ci
+      - name: Test core and MCP
+        run: cargo test --workspace --locked
+      - name: Test and build frontend
+        working-directory: apps/continuum-desktop
+        run: |
+          npm test
+          npm run build
+      - name: Prepare Windows native test resources
+        if: matrix.platform == 'windows'
+        working-directory: apps/continuum-desktop
+        env:
+          TAURI_ENV_TARGET_TRIPLE: x86_64-pc-windows-msvc
+        run: node scripts/prepare-windows.mjs
+      - name: Prepare Linux native test resources
+        if: matrix.platform == 'linux'
+        run: |
+          cargo build --locked --release -p continuum-mcp --bin continuum-mcp
+          packaging/prepare-gstreamer-plugins.sh
+      - name: Test Windows desktop
+        if: matrix.platform == 'windows'
+        run: cargo test --locked --manifest-path apps/continuum-desktop/src-tauri/Cargo.toml --target x86_64-pc-windows-msvc
+      - name: Test Linux desktop
+        if: matrix.platform == 'linux'
+        run: cargo test --locked --manifest-path apps/continuum-desktop/src-tauri/Cargo.toml
+      - name: Build Windows setup package
+        if: matrix.platform == 'windows'
+        working-directory: apps/continuum-desktop
+        run: npm run build:windows
+      - name: Build Linux packages
+        if: matrix.platform == 'linux'
+        working-directory: apps/continuum-desktop
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: npm run build:linux
+      - name: Stage packages and checksums
+        run: node apps/continuum-desktop/scripts/stage-release.mjs '${{ matrix.platform }}' '${{ matrix.target }}' 'release-assets/${{ matrix.platform }}'
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Continuum-${{ matrix.platform }}-x64-unsigned
+          path: release-assets/${{ matrix.platform }}/*
+          if-no-files-found: error
+
+  draft-release:
+    name: Create draft release
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_draft && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: Continuum-*-x64-unsigned
+          path: release-assets
+          merge-multiple: true
+      - name: Verify staged checksums
+        working-directory: release-assets
+        run: |
+          sha256sum --check SHA256SUMS-linux.txt
+          sha256sum --check SHA256SUMS-windows.txt
+      - name: Create draft with package notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REPO: ${{ github.repository }}
+        run: |
+          cat > release-notes.md <<'NOTES'
+          Linux x86-64 AppImage/deb and Windows x64 NSIS packages, built from the same tagged source.
+
+          Unsigned pilot packages. Read docs/INSTALLATION.md and the platform status/Windows microphone limitations before use. Headless CI does not certify physical capture, OS permissions, signing, or project portability.
+
+          Maintainer: complete live package checks and update these notes before publishing this draft. Verify filenames and checksums. Preserve existing Linux assets when adding a Windows revision.
+          NOTES
+          gh release create "$RELEASE_TAG" release-assets/* --repo "$RELEASE_REPO" \
+            --verify-tag --draft --title "Continuum $RELEASE_TAG — Linux and Windows pilot" \
+            --notes-file release-notes.md

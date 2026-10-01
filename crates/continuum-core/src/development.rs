@@ -3721,6 +3721,12 @@ fn git_ok(root: &Path, args: &[&str], limit: usize, action: &str) -> Result<GitO
 fn git_program() -> PathBuf {
     #[cfg(windows)]
     {
+        if let Ok(executable) = std::env::current_exe() {
+            if let Some(root) = executable.parent() {
+                let bundled = root.join("tools/git/cmd/git.exe");
+                if bundled.is_file() { return bundled; }
+            }
+        }
         let in_path = std::env::var_os("PATH")
             .into_iter()
             .flat_map(|value| std::env::split_paths(&value).collect::<Vec<_>>())
@@ -3743,8 +3749,19 @@ fn git_program() -> PathBuf {
     }
 }
 
+fn git_command() -> Command {
+    #[allow(unused_mut)]
+    let mut command = Command::new(git_program());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+    command
+}
+
 fn run_git(root: &Path, args: &[&str], stdout_limit: usize) -> Result<GitOutput> {
-    let mut child = Command::new(git_program())
+    let mut child = git_command()
         .current_dir(root)
         .arg("-c")
         .arg("core.fsmonitor=false")
@@ -3810,7 +3827,7 @@ fn run_git_with_input(
     input: Vec<u8>,
     stdout_limit: usize,
 ) -> Result<GitOutput> {
-    let mut child = Command::new(git_program())
+    let mut child = git_command()
         .current_dir(root)
         .arg("-c")
         .arg("core.fsmonitor=false")
@@ -3883,7 +3900,7 @@ fn run_git_with_input(
 }
 
 fn run_git_digest(root: &Path, args: &[&str], byte_limit: u64) -> Result<(Vec<u8>, u64)> {
-    let mut child = Command::new(git_program())
+    let mut child = git_command()
         .current_dir(root)
         .arg("-c")
         .arg("core.fsmonitor=false")
@@ -3968,7 +3985,19 @@ fn open_regular_file_nofollow(path: &Path) -> Result<File> {
         use std::os::unix::fs::OpenOptionsExt;
         options.custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
     }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.custom_flags(0x00200000); // FILE_FLAG_OPEN_REPARSE_POINT
+    }
     let file = options.open(path)?;
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if file.metadata()?.file_attributes() & 0x00000400 != 0 {
+            return Err(CoreError::Validation("untracked repository entry must not be a Windows reparse point".into()));
+        }
+    }
     if !file.metadata()?.is_file() {
         return Err(CoreError::Validation(
             "untracked repository entry changed before it could be observed".into(),

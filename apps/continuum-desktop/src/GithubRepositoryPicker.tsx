@@ -78,7 +78,7 @@ export function GithubRepositoryPicker({ remoteUrl, branch, disabled, onSelect }
   const selected = repositories.find((repo) => repo.clone_url === remoteUrl);
   return <div className="github-picker" aria-label="GitHub connection">
     <div className="github-picker-heading"><strong>GitHub</strong><span>{status?.connected ? `Connected${status.username ? ` as @${status.username}` : ""}` : "Not connected"}</span></div>
-    {!status?.cli_available && <p>GitHub CLI is required for web login on this Linux build. Install <code>gh</code>, then refresh this page. No GitHub App registration is needed.</p>}
+    {status && !status.cli_available && <p>GitHub CLI is unavailable. Repair your Continuum installation or install <code>gh</code>, then reopen this page.</p>}
     {status?.cli_available && !status.connected && <>
       <button type="button" disabled={working || progress?.phase === "waiting"} onClick={() => void login()}>Login with GitHub</button>
       <small>GitHub CLI opens your browser and manages the credential. It may request access to repositories beyond this project; Continuum uploads only to the repo you choose. If the OS keyring is unavailable, GitHub CLI may save its credential in a protected local file.</small>

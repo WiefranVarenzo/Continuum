@@ -1,3 +1,5 @@
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
@@ -5,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use continuum_core::{
     ActorRef, AnalysisLimits, AnalyzeBaselineInput, ArtifactClassification, CORE_SCHEMA_VERSION,
-    CaptureExternalEvidence, CaptureExternalKind, CaptureMarker, CapturePermissionStatus, CaptureSegment,
+    CaptureExternalEvidence, CaptureMarker, CapturePermissionStatus, CaptureSegment,
     CaptureSession, CaptureSessionPage, CaptureSourceKind, CheckpointComparison,
     CheckpointEnvelope, CheckpointEnvelopePage, CheckpointScope, CommandContext,
     CommitIngestionInput, ContextPack, ContextPackRequest, ContinuityStore, CreatedMcpGrant,
@@ -25,8 +27,16 @@ mod workspace;
 mod assistant;
 mod remote_sync;
 mod github_cli;
+mod platform;
+#[cfg(not(windows))]
+mod system_audio;
+#[cfg(windows)]
+#[path = "system_audio_windows.rs"]
 mod system_audio;
 #[cfg(target_os = "linux")]
+mod media_permissions;
+#[cfg(windows)]
+#[path = "media_permissions_windows.rs"]
 mod media_permissions;
 #[cfg(target_os = "linux")]
 mod recording_runtime;
@@ -133,6 +143,10 @@ fn safe_child(parent: &Path, directory_name: &str) -> Result<PathBuf, String> {
     let mut components = Path::new(directory_name).components();
     if !matches!(components.next(), Some(Component::Normal(_))) || components.next().is_some() {
         return Err("folder name must be one safe directory name".into());
+    }
+    #[cfg(windows)]
+    if !platform::valid_windows_folder_name(directory_name) {
+        return Err("Choose a Windows folder name without reserved device names, trailing dots, or < > : \" / \\ | ? * characters.".into());
     }
     let parent = fs::canonicalize(parent).map_err(|error| error.to_string())?;
     if !parent.is_dir() {
@@ -627,7 +641,7 @@ fn capture_runtime_health() -> CaptureRuntimeHealth {
     let native_screen_audio_available = native_screen_available
         && missing_native_screen_audio_elements.is_empty();
     let summary = if cfg!(target_os = "windows") {
-        "Windows screen and microphone recording use the WebView2 sharing dialog. For system sound, choose a share source that offers audio and enable Share audio there; Continuum will stop if Windows returns no audio track.".into()
+        "Windows screen recording uses the system sharing dialog. System audio records the default output device through WASAPI; microphone access is requested separately. Each source is started only after your capture consent.".into()
     } else if native_screen_available {
         if native_screen_audio_available {
             "Screen and selected audio sources use one native Linux recorder. Choose a non-sensitive window in the system chooser.".into()
@@ -987,7 +1001,7 @@ fn stop_native_screen_capture(
     let recorded = screen.take_ready()?.ok_or("No completed screen recording is awaiting save")?;
     let name = if title.trim().is_empty() { "Screen recording" } else { title.trim() };
     let input = CaptureExternalEvidence {
-        kind: CaptureExternalKind::File,
+        kind: continuum_core::CaptureExternalKind::File,
         title: name.to_string(),
         source_uri: None,
         source_title: Some(name.to_string()),
@@ -1245,7 +1259,7 @@ fn main() {
     configure_gstreamer_plugins();
     let builder = tauri::Builder::default()
         .setup(|app| {
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", windows))]
             media_permissions::install(app)?;
             Ok(())
         })

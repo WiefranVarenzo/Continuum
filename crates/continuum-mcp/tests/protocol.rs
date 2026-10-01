@@ -15,6 +15,34 @@ fn fixture(allow_proposals: bool) -> (tempfile::TempDir, ContinuityStore, String
     fixture_for_family(allow_proposals, McpClientFamily::Generic)
 }
 
+#[cfg(windows)]
+#[test]
+#[ignore = "Requires an explicitly selected packaged Windows MCP executable."]
+fn packaged_windows_stdio_server_accepts_codex_transcript() {
+    use std::io::Write;
+    use std::os::windows::process::CommandExt;
+    use std::process::{Command, Stdio};
+    let binary = std::env::var("CONTINUUM_QA_MCP_BINARY").expect("Select the packaged MCP executable");
+    let (directory, _store, token) = fixture_for_family(false, McpClientFamily::Codex);
+    let mut child = Command::new(binary)
+        .args(["--project", directory.path().join("project").to_str().unwrap()])
+        .env("CONTINUUM_MCP_GRANT_TOKEN", token)
+        .creation_flags(0x0800_0000)
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
+        .spawn().unwrap();
+    child.stdin.take().unwrap().write_all(include_bytes!("fixtures/codex.jsonl")).unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success(), "Packaged server must exit cleanly");
+    let responses: Vec<Value> = String::from_utf8(output.stdout).unwrap().lines()
+        .map(|line| serde_json::from_str(line).unwrap()).collect();
+    assert_eq!(responses.len(), 6);
+    for response in &responses {
+        assert!(response.get("error").is_none(), "Packaged server rejected a Codex request");
+        assert_eq!(response["jsonrpc"], "2.0");
+    }
+    assert!(responses.iter().any(|r| r["id"] == 5 && r["result"].get("isError") != Some(&Value::Bool(true))));
+}
+
 fn fixture_for_family(
     allow_proposals: bool,
     client_family: McpClientFamily,

@@ -2,7 +2,6 @@
 //! All Git commands run in a disposable clone; an unsuccessful push cannot rewrite local data.
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use continuum_core::{ContinuityStore, ProjectManifest};
@@ -103,12 +102,11 @@ fn valid_remote_url(raw: &str) -> Result<&str, String> {
 }
 
 fn git(directory: Option<&Path>, args: &[&str]) -> Result<String, String> {
-    let mut command = Command::new("git");
+    let mut command = crate::platform::command(crate::platform::tool("git"));
     command.args(args).env("GIT_TERMINAL_PROMPT", "0");
     // Scope the GitHub CLI credential helper to this subprocess and its Git LFS
     // children. Do not change the user's global Git configuration or expose a
     // token in URLs, arguments, environment variables, or project snapshots.
-    #[cfg(target_os = "linux")]
     if crate::github_cli::is_available() && crate::github_cli::configure_git_command(&mut command) {
         command
             .env("GIT_CONFIG_COUNT", "1")
@@ -138,6 +136,22 @@ fn git(directory: Option<&Path>, args: &[&str]) -> Result<String, String> {
 
 fn require_lfs() -> Result<(), String> {
     git(None, &["lfs", "version"]).map(|_| ()).map_err(|_| "Git LFS is required for complete project media. Install git-lfs, then retry; nothing was uploaded.".into())
+}
+
+fn commit_snapshot(repo: &Path) -> Result<(), String> {
+    // Fresh Windows installs need no global Git identity. Preserve a configured
+    // identity, otherwise attribute this generated snapshot to the application.
+    // These overrides apply only to this commit, never to a user's repository.
+    let identity = |key: &str, fallback: &str| {
+        git(Some(repo), &["config", "--get", key])
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| fallback.to_string())
+    };
+    let name = format!("user.name={}", identity("user.name", "Continuum Snapshot"));
+    let email = format!("user.email={}", identity("user.email", "continuum-snapshot@example.invalid"));
+    git(Some(repo), &["-c", &name, "-c", &email, "commit", "-m", "Continuum project snapshot"])?;
+    Ok(())
 }
 
 fn read_link(root: &Path, project_id: &str) -> Result<Option<RemoteLink>, String> {
@@ -339,7 +353,7 @@ pub fn publish(
             changed: false,
         });
     }
-    git(Some(&repo), &["commit", "-m", "Continuum project snapshot"])?;
+    commit_snapshot(&repo)?;
     let commit_id = git(Some(&repo), &["rev-parse", "HEAD"])?;
     git(
         Some(&repo),
@@ -526,11 +540,12 @@ mod tests {
             .unwrap()
             .ends_with("filter: lfs")
         );
-        git(
-            Some(&first),
-            &["commit", "-m", "Initial Continuum snapshot"],
-        )
-        .unwrap();
+        // Empty local values override any developer's global identity, exercising
+        // the same clean-machine fallback used by the real publish path.
+        git(Some(&first), &["config", "user.name", ""]).unwrap();
+        git(Some(&first), &["config", "user.email", ""]).unwrap();
+        commit_snapshot(&first).unwrap();
+        assert_eq!(git(Some(&first), &["log", "-1", "--format=%an <%ae>"]).unwrap(), "Continuum Snapshot <continuum-snapshot@example.invalid>");
         git(Some(&first), &["push", "origin", "HEAD:refs/heads/main"]).unwrap();
 
         let second = directory.path().join("second-clone");

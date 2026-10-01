@@ -123,7 +123,7 @@ export function ProjectLauncher({ busy, recent, onOpen, onCreate, onRestore, onR
           <button className="primary-action" disabled={busy || !sourcePath || !restoreParent || !restoreName}>{busy ? "Restoring…" : "Restore and verify"}</button>
         </form>}
         {tab === "from repo" && <form className="launcher-form" noValidate onSubmit={(event) => void submitRemote(event)}>
-          <div><h2>Get a project from GitHub or GitLab</h2><p>Choose a repository previously uploaded from Continuum, then choose a local parent folder. The project and Git LFS media will be downloaded into a new folder; existing local projects are never overwritten. Git and Git LFS must be installed.</p></div>
+          <div><h2>Get a project from GitHub or GitLab</h2><p>Choose a repository previously uploaded from Continuum and a local destination. Continuum downloads the project and its media into a new folder. Existing projects stay safe.</p></div>
           <GithubRepositoryPicker remoteUrl={remoteUrl} branch={remoteBranch} disabled={busy || remoteWorking} onSelect={(url, branch) => { setRemoteUrl(url); setRemoteBranch(branch); setRemoteFeedback(""); setRestoreName((current) => current || folderName(url.split("/").at(-1)?.replace(/\.git$/, "") ?? "continuum-project")); }} />
           <label>Repository URL<input value={remoteUrl} onChange={(event) => { setRemoteUrl(event.target.value); setRemoteBranch(""); }} placeholder="https://github.com/you/continuum-project.git" required /></label>
           {remoteBranch && <small>Selected branch: {remoteBranch}</small>}

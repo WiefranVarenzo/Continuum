@@ -22,3 +22,9 @@ packaging/gstreamer-1.0/
 !.env.example
 **/ledger.sqlite3
 **/.continuum-remote.json
+
+# Windows resources and release staging
+packaging/windows/
+packaging/windows-downloads/
+.tauri/
+/release-assets/

@@ -3,12 +3,15 @@
     "beforeBuildCommand": "node scripts/prepare-windows.mjs"
   },
   "bundle": {
+    "useLocalToolsDir": true,
     "targets": "nsis",
     "resources": {
       "../../../target/release/continuum-mcp": null,
       "../../../packaging/gstreamer-1.0": null,
-      "../../../target/x86_64-pc-windows-msvc/release/continuum-mcp.exe": "continuum-mcp.exe"
+      "../../../packaging/windows/continuum-mcp.exe": "continuum-mcp.exe",
+      "../../../packaging/windows/tools/": "tools/"
     },
-    "icon": ["icons/icon.ico"]
+    "icon": ["icons/icon.ico"],
+    "windows": { "nsis": { "installMode": "currentUser" }, "webviewInstallMode": { "type": "downloadBootstrapper", "silent": true } }
   }
 }

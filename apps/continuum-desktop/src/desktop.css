@@ -4,6 +4,22 @@
   gap: 0.5rem;
 }
 
+/* Native Windows controls must share the app's typography. */
+body { font-family: "Segoe UI", Inter, ui-sans-serif, system-ui, Arial, sans-serif; font-size: 14px; }
+button, input, select, textarea { font-family: inherit; }
+
+/* Panels used to inherit the report's fixed-width, centered alert style. */
+.capture-panel > .error, .ai-continuity-panel > .error,
+.continuity-panel > .error, .release-center > .error {
+  width: 100%; margin: 1rem 0; padding: .8rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--danger) 25%, var(--line));
+  border-radius: 10px; background: color-mix(in srgb, var(--danger) 6%, var(--panel));
+  overflow-wrap: anywhere;
+}
+.capture-panel > .notice, .ai-continuity-panel > .notice { margin: .75rem 0; overflow-wrap: anywhere; }
+.capture-heading-row > div, .ai-heading-row > div, .capture-card, .ai-card { min-width: 0; }
+.capture-state { flex-shrink: 0; align-self: flex-start; }
+
 .app-bar button,
 .project-opener button {
   cursor: pointer;

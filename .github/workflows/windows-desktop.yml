@@ -27,7 +27,10 @@ jobs:
         working-directory: apps/continuum-desktop
         run: npm test
       - name: Test core on Windows
-        run: cargo test -p continuum-core --lib
+        run: cargo test --workspace
+      - name: Prepare Windows MCP, portable tools and frontend
+        working-directory: apps/continuum-desktop
+        run: node scripts/prepare-windows.mjs
       - name: Test desktop Rust code on Windows
         run: cargo test --manifest-path apps/continuum-desktop/src-tauri/Cargo.toml
       - name: Build Windows NSIS setup executable

@@ -1,5 +1,7 @@
 # Memelihara, memperbaiki, dan merilis Continuum
 
+> **Panduan lintas platform — 2 Oktober 2026:** lihat [build Linux/Windows](development/BUILD-AND-DEVELOP.md), [arsitektur](architecture/CROSS-PLATFORM-ARCHITECTURE.md), dan [publikasi rilis](releases/PUBLISHING.md). Windows fix2 adalah pilot unsigned dengan mikrofon fisik belum terverifikasi; rilis AppImage Linux tetap tersedia. Workflow lintas platform menambahkan paket Linux/Windows dan draft release manual.
+
 Panduan operasional ini melengkapi [handover arsitektur](HANDOVER.md), bukan menggantikan kontrak detail di dokumen CP/ADR. Gunakan branch/commit terpisah untuk perubahan berikutnya dan catat perilaku sebelum/sesudah secara terukur.
 
 ## Prasyarat dan setup

@@ -98,10 +98,22 @@ export async function recordingStream(tracks: MediaStreamTrack[], preparedContex
   const audio = tracks.filter(track => track.kind === "audio");
   if (audio.length <= 1) return {stream:new MediaStream(tracks), release:()=>{}};
   const context = preparedContext ?? new AudioContext();
+  const sources:MediaStreamAudioSourceNode[]=[];
+  let destination:MediaStreamAudioDestinationNode|undefined;
+  let closed=false;
+  const release=()=>{
+    if(closed)return;closed=true;
+    sources.forEach(source=>source.disconnect());
+    if(destination){destination.disconnect();stopStream(destination.stream);}
+    if(!preparedContext)void context.close();
+  };
   try {
-    const destination = context.createMediaStreamDestination();
-    for (const track of audio) context.createMediaStreamSource(new MediaStream([track])).connect(destination);
+    destination = context.createMediaStreamDestination();
+    for (const track of audio) {
+      const source=context.createMediaStreamSource(new MediaStream([track]));
+      sources.push(source);source.connect(destination);
+    }
     await context.resume();
-    return {stream:new MediaStream([...tracks.filter(track=>track.kind==="video"),...destination.stream.getAudioTracks()]), release:()=>{stopStream(destination.stream);if(!preparedContext)void context.close();}};
-  } catch (error) { if(!preparedContext)void context.close(); throw error; }
+    return {stream:new MediaStream([...tracks.filter(track=>track.kind==="video"),...destination.stream.getAudioTracks()]), release};
+  } catch (error) { release(); throw error; }
 }
