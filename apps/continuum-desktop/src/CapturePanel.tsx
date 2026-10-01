@@ -39,6 +39,7 @@ import {
 import "./capture.css";
 import {captureError, recordingStream, relayScreen, requestMediaPermission, startRecorder, stopStream} from "./captureMedia";
 import {desktopAudio} from "./systemAudio";
+import {microphoneAudio,microphoneConstraints,type MicrophoneLevel} from "./microphone";
 
 type CaptureUiState = "idle" | "requesting" | "preparing" | "capturing" | "paused" | "finalizing" | "completed" | "error";
 
@@ -114,6 +115,13 @@ export function CapturePanel({ projectId, projectOpen, researchEnabled, activeRe
   const [previousRecordings,setPreviousRecordings]=useState<CaptureSession[]>([]);
   const [nativeScreenActive,setNativeScreenActive]=useState(false);
   const [nativeSavePending,setNativeSavePending]=useState(false);
+  const [microphoneDevices,setMicrophoneDevices]=useState<MediaDeviceInfo[]>([]);
+  const [microphoneDevice,setMicrophoneDevice]=useState("");
+  const [microphoneGain,setMicrophoneGain]=useState(1);
+  const [microphoneLevel,setMicrophoneLevel]=useState<MicrophoneLevel|null>(null);
+  const [microphoneTesting,setMicrophoneTesting]=useState(false);
+  const microphoneTest=useRef<AbortController|null>(null);
+  const liveMicrophoneGain=useRef<((gain:number)=>void)|null>(null);
   const runtime = useRef<CaptureRuntime | null>(null);
   const permissionRequest = useRef<AbortController | null>(null);
   const nativeScreenStarted = useRef(false);
@@ -123,13 +131,58 @@ export function CapturePanel({ projectId, projectOpen, researchEnabled, activeRe
 
   const visibleIndicator = ["requesting", "preparing", "capturing", "paused", "finalizing"].includes(uiState);
   const captureAvailable = projectOpen && researchEnabled;
-  const canStart = captureAvailable && consent && requestedCaptureSources(selection).length > 0 && !visibleIndicator && !nativeSavePending;
+  const canStart = captureAvailable && consent && requestedCaptureSources(selection).length > 0 && !visibleIndicator && !nativeSavePending && !microphoneTesting;
+  const webMicrophone=selection.microphone && !(selection.screen && runtimeHealth?.native_screen_available);
+
+  async function refreshMicrophones() {
+    if(typeof navigator.mediaDevices?.enumerateDevices!=="function")return;
+    try {setMicrophoneDevices((await navigator.mediaDevices.enumerateDevices()).filter(item=>item.kind==="audioinput" && item.deviceId!=="default" && item.deviceId!=="communications"));}
+    catch { /* Permission may still be pending. Start/test reports device errors. */ }
+  }
+
+  useEffect(()=>{
+    if(!webMicrophone)return;
+    void refreshMicrophones();
+    const devices=navigator.mediaDevices;
+    const refresh=()=>{void refreshMicrophones();};
+    devices?.addEventListener?.("devicechange",refresh);
+    return ()=>devices?.removeEventListener?.("devicechange",refresh);
+  },[webMicrophone]);
+
+  async function testMicrophone() {
+    if(!captureAvailable || !consent || visibleIndicator || microphoneTesting)return;
+    const controller=new AbortController();microphoneTest.current=controller;
+    setMicrophoneTesting(true);setMicrophoneLevel(null);setError("");
+    let context:AudioContext|undefined, stream:MediaStream|undefined;
+    let release=()=>{};
+    try {
+      context=new AudioContext({sampleRate:48000});void context.resume().catch(()=>{});
+      stream=await requestMediaPermission(navigator.mediaDevices.getUserMedia(microphoneConstraints(microphoneDevice)),"microphone",controller.signal);
+      const input=microphoneAudio(stream,context,microphoneGain,setMicrophoneLevel);
+      release=input.release;liveMicrophoneGain.current=input.setGain;
+      void refreshMicrophones();await context.resume();
+      setNotice("Microphone test is active for 10 seconds. Speak normally; no recording is saved.");
+      await new Promise<void>(resolve=>{
+        const finish=()=>{clearTimeout(timer);controller.signal.removeEventListener("abort",finish);resolve();};
+        const timer=setTimeout(finish,10000);
+        controller.signal.addEventListener("abort",finish,{once:true});
+        if(controller.signal.aborted)finish();
+      });
+      setNotice("Microphone test finished. No recording was saved.");
+    } catch(cause){if(!controller.signal.aborted)setError(captureError(cause,runtimeHealth?.platform));}
+    finally {
+      release();if(stream)stopStream(stream);if(context)void context.close();
+      liveMicrophoneGain.current=null;
+      if(microphoneTest.current===controller){microphoneTest.current=null;setMicrophoneTesting(false);}
+    }
+  }
 
   useEffect(() => { onRecordingChange?.(visibleIndicator); }, [visibleIndicator, onRecordingChange]);
   useEffect(() => { onCaptureStatusChange?.(uiState === "requesting" ? "Waiting for permission" : uiState === "preparing" ? "Preparing capture" : uiState === "capturing" ? "Recording" : uiState === "paused" ? "Capture paused" : uiState === "finalizing" ? "Saving recording" : ""); }, [uiState, onCaptureStatusChange]);
   useEffect(() => { if (activeResearchSessionId && !visibleIndicator) setResearchSessionId(activeResearchSessionId); }, [activeResearchSessionId, visibleIndicator]);
 
   useEffect(() => () => {
+    microphoneTest.current?.abort();
     permissionRequest.current?.abort();
     if (nativeStopTimer.current) clearTimeout(nativeStopTimer.current);
     if (nativeScreenStarted.current) {
@@ -220,10 +273,10 @@ export function CapturePanel({ projectId, projectOpen, researchEnabled, activeRe
     if (!mimeType) return setError("No supported WebM recording encoder was found. Screen/microphone permission cannot fix this. Use the updated Continuum package with its recording plugins.");
 
     const capabilities = detectCaptureCapabilities();
-    const nativeAudio=!!projectId && runtimeHealth?.platform === "linux" && !!runtimeHealth.native_system_audio_available;
+    const nativeAudio=!!projectId && !!runtimeHealth?.native_system_audio_available;
     if (nativeAudio) {
       const capability=capabilities.find(item=>item.source_kind==="system_audio")!;
-      capability.available=true;capability.reason=null;capability.capability_id="linux-desktop-audio-monitor";
+      capability.available=true;capability.reason=null;capability.capability_id=runtimeHealth?.platform === "windows" ? "windows-wasapi-loopback" : "linux-desktop-audio-monitor";
     }
     const unavailable = sourceKinds.find((kind) => !capabilities.find((item) => item.source_kind === kind)?.available);
     if (unavailable) return setError(`${sourceLabel(unavailable)} is unavailable on this system.`);
@@ -241,7 +294,7 @@ export function CapturePanel({ projectId, projectOpen, researchEnabled, activeRe
     try {
       // Unlock Web Audio in this click as well; waiting for the OS chooser can
       // otherwise leave the mixer suspended indefinitely in WebKit.
-      if(selection.system_audio&&(nativeAudio||selection.microphone)) {
+      if(selection.microphone || (selection.system_audio && nativeAudio)) {
         preparedAudio=new AudioContext({sampleRate:48000});
         void preparedAudio.resume().catch(()=>{});
         controller.signal.addEventListener("abort",()=>{if(preparedAudio)void preparedAudio.close();},{once:true});
@@ -260,7 +313,8 @@ export function CapturePanel({ projectId, projectOpen, researchEnabled, activeRe
       let relayedScreen:MediaStream|null=null;
       if(selection.screen && displayStream){const relay=await relayScreen(displayStream,controller.signal);relayedScreen=relay.stream;releaseRelay=relay.release;}
       if (selection.microphone) {
-        microphoneStream = await requestMediaPermission(navigator.mediaDevices.getUserMedia({audio:true,video:false}), "microphone", controller.signal);
+        setMicrophoneLevel(null);
+        microphoneStream = await requestMediaPermission(navigator.mediaDevices.getUserMedia(microphoneConstraints(microphoneDevice)), "microphone", controller.signal);
         streams.push(microphoneStream);
       }
       if (selection.system_audio && nativeAudio) {
@@ -316,12 +370,18 @@ export function CapturePanel({ projectId, projectOpen, researchEnabled, activeRe
       const tracks: MediaStreamTrack[] = [];
       if (selection.screen) tracks.push(...(relayedScreen?.getVideoTracks() ?? []));
       if (selection.system_audio) tracks.push(...(systemAudioStream?.getAudioTracks() ?? []));
-      if (selection.microphone) tracks.push(...(microphoneStream?.getAudioTracks() ?? []));
+      let releaseMicrophone=()=>{};
+      if (microphoneStream && preparedAudio) {
+        const input=microphoneAudio(microphoneStream,preparedAudio,microphoneGain,setMicrophoneLevel);
+        tracks.push(...input.stream.getAudioTracks());releaseMicrophone=input.release;
+        releaseAudio=()=>{input.release();liveMicrophoneGain.current=null;};
+        liveMicrophoneGain.current=input.setGain;void refreshMicrophones();
+      }
       if (tracks.length === 0) throw new Error("The operating system returned no usable media tracks.");
 
       const mixed = await recordingStream(tracks,preparedAudio);
       const mediaStream = mixed.stream;
-      releaseAudio = mixed.release;
+      releaseAudio = ()=>{mixed.release();releaseMicrophone();liveMicrophoneGain.current=null;};
       if (controller.signal.aborted) throw new DOMException("Capture cancelled.", "AbortError");
       const recorder = new MediaRecorder(mediaStream, { mimeType, videoBitsPerSecond: hasVideo ? 2_500_000 : undefined, audioBitsPerSecond: 128_000 });
       created = await beginCapture(created.id, created.state_version);
@@ -820,9 +880,23 @@ export function CapturePanel({ projectId, projectOpen, researchEnabled, activeRe
         <h3>Live session</h3>
         <label className="research-session-select">Research session<select value={researchSessionId} disabled={!captureAvailable || visibleIndicator} onChange={(event) => setResearchSessionId(event.target.value)}><option value="">Unassigned Evidence</option>{researchSessions.map((item) => <option key={item.entity_id} value={item.entity_id}>{item.title}</option>)}</select></label>
         <div className="source-options">
-          {(["screen", "system_audio", "microphone"] as CaptureSourceKind[]).map((kind) => <label key={kind}><input type="checkbox" checked={selection[kind]} disabled={!captureAvailable || visibleIndicator} onChange={(event) => setSource(kind, event.target.checked)} />{sourceLabel(kind)}</label>)}
+          {(["screen", "system_audio", "microphone"] as CaptureSourceKind[]).map((kind) => <label key={kind}><input type="checkbox" checked={selection[kind]} disabled={!captureAvailable || visibleIndicator || microphoneTesting} onChange={(event) => setSource(kind, event.target.checked)} />{sourceLabel(kind)}</label>)}
         </div>
-        {selection.system_audio && runtimeHealth?.platform === "windows" && <small>In the Windows sharing dialog, enable Share audio. If the selected screen or window provides no audio track, Continuum will not save a silent recording as though it contained system sound.</small>}
+        {webMicrophone && <div className="microphone-settings">
+          <label>Microphone input<select value={microphoneDevice} disabled={!captureAvailable || visibleIndicator || microphoneTesting} onChange={event=>{setMicrophoneDevice(event.target.value);setMicrophoneLevel(null);}}>
+            <option value="">{runtimeHealth?.platform==="windows"?"Windows default microphone":"System default microphone"}</option>
+            {microphoneDevice && !microphoneDevices.some(item=>item.deviceId===microphoneDevice) && <option value={microphoneDevice}>Selected microphone · disconnected or unavailable</option>}
+            {microphoneDevices.map((item,index)=><option key={item.deviceId || index} value={item.deviceId}>{item.label || `Microphone ${index+1} · allow access to reveal its name`}</option>)}
+          </select></label>
+          <label>Microphone volume · {Math.round(microphoneGain*100)}%<input type="range" min="25" max="400" step="25" value={microphoneGain*100} disabled={!captureAvailable} onChange={event=>{const gain=Number(event.target.value)/100;setMicrophoneGain(gain);liveMicrophoneGain.current?.(gain);}} /></label>
+          {!visibleIndicator && <button disabled={!captureAvailable || !consent} onClick={()=>microphoneTesting?microphoneTest.current?.abort():void testMicrophone()}>{microphoneTesting?"Stop microphone test":"Test microphone"}</button>}
+          {microphoneLevel && <div className={`microphone-meter ${microphoneLevel.muted || microphoneLevel.silent || microphoneLevel.suspended?"attention":""}`}>
+            <span>{microphoneLevel.label}</span><meter aria-label="Microphone signal level" min="0" max="1" value={microphoneLevel.level} />
+            <small>{microphoneLevel.muted?"Microphone is muted or stopped. Check the input device.":microphoneLevel.suspended?"Microphone audio is waiting for the recording engine.":microphoneLevel.silent?"No microphone signal detected. Speak, check Windows input volume, and select the correct microphone. In VirtualBox, also enable Audio Input and the host microphone.":microphoneLevel.received?"Microphone signal received.":"Speak to check the microphone signal."}</small>
+          </div>}
+          <small>Test the input before recording. Microphone audio is kept separate from system audio until mixing; conferencing filters are disabled. Use headphones to avoid recording speaker sound twice.</small>
+        </div>}
+        {selection.system_audio && runtimeHealth?.platform === "windows" && !runtimeHealth.native_system_audio_available && <small>No Windows output device is available for system audio. Connect an output device and retry.</small>}
         {selection.system_audio && runtimeHealth?.native_system_audio_available && <small>System audio records the sound playing through your current output device. Microphone is selected separately.</small>}
         <label className="consent"><input type="checkbox" checked={consent} disabled={!captureAvailable || visibleIndicator} onChange={(event) => setConsent(event.target.checked)} />I confirm I have permission to capture this screen and audio.</label>
         <div className="capture-actions">

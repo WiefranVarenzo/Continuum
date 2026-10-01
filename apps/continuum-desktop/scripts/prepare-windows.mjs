@@ -1,14 +1,14 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { mkdirSync, copyFileSync } from "node:fs";
 
 const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repoDir = path.resolve(appDir, "../..");
-const target = "x86_64-pc-windows-msvc";
-const configuredTarget = process.env.TAURI_ENV_TARGET_TRIPLE;
+const target = process.env.TAURI_ENV_TARGET_TRIPLE || "x86_64-pc-windows-msvc";
 
-if (configuredTarget && configuredTarget !== target) {
-  throw new Error(`Windows preparation was requested for ${configuredTarget}, expected ${target}`);
+if (!/^x86_64-pc-windows-(msvc|gnu)$/.test(target)) {
+  throw new Error(`Unsupported Windows target: ${target}`);
 }
 
 function run(command, args, cwd) {
@@ -19,6 +19,10 @@ function run(command, args, cwd) {
 
 const cargo = process.platform === "win32" ? "cargo" : "cargo-xwin";
 run(cargo, ["build", "--release", "--target", target, "-p", "continuum-mcp", "--bin", "continuum-mcp"], repoDir);
+const staging = path.join(repoDir, "packaging/windows");
+mkdirSync(staging, {recursive:true});
+copyFileSync(path.join(repoDir, "target", target, "release/continuum-mcp.exe"), path.join(staging, "continuum-mcp.exe"));
+run(process.execPath, ["scripts/prepare-windows-tools.mjs"], appDir);
 if (process.platform === "win32") {
   if (process.env.npm_execpath) {
     run(process.execPath, [process.env.npm_execpath, "run", "build"], appDir);

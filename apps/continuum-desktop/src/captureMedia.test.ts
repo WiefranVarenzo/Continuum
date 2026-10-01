@@ -22,11 +22,11 @@ describe("Capture permission lifecycle",()=>{
   expect(captureError(new DOMException("unsupported","NotSupportedError"),"windows")).toContain("WebView2");
  });
  it("mixes microphone and desktop audio into one recorder track and releases it",async()=>{
-  const close=vi.fn(),stop=vi.fn(),connect=vi.fn();const mixed={kind:"audio",stop};
+  const close=vi.fn(),stop=vi.fn(),connect=vi.fn(),disconnect=vi.fn();const mixed={kind:"audio",stop};
   vi.stubGlobal("MediaStream",class {constructor(public tracks:MediaStreamTrack[]){}getTracks(){return this.tracks;}getAudioTracks(){return this.tracks.filter(t=>t.kind==="audio");}});
-  vi.stubGlobal("AudioContext",class {close=close;resume=vi.fn().mockResolvedValue(undefined);createMediaStreamDestination(){return {stream:{getTracks:()=>[mixed],getAudioTracks:()=>[mixed]}};}createMediaStreamSource(){return {connect};}});
+  vi.stubGlobal("AudioContext",class {close=close;resume=vi.fn().mockResolvedValue(undefined);createMediaStreamDestination(){return {disconnect,stream:{getTracks:()=>[mixed],getAudioTracks:()=>[mixed]}};}createMediaStreamSource(){return {connect,disconnect};}});
   const result=await recordingStream([{kind:"video"},{kind:"audio"},{kind:"audio"}] as MediaStreamTrack[]);
-  expect(result.stream.getTracks()).toHaveLength(2);expect(connect).toHaveBeenCalledTimes(2);result.release();expect(stop).toHaveBeenCalledOnce();expect(close).toHaveBeenCalledOnce();
+  expect(result.stream.getTracks()).toHaveLength(2);expect(connect).toHaveBeenCalledTimes(2);result.release();result.release();expect(disconnect).toHaveBeenCalledTimes(3);expect(stop).toHaveBeenCalledOnce();expect(close).toHaveBeenCalledOnce();
  });
 });
 

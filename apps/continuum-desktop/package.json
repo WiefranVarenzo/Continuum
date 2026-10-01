@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json && vite build",
+    "build:linux": "tauri build --bundles appimage,deb",
     "build:windows": "tauri build --bundles nsis --target x86_64-pc-windows-msvc",
+    "build:windows:gnu": "tauri build --bundles nsis --target x86_64-pc-windows-gnu",
     "build:windows:cross": "tauri build --bundles nsis --runner cargo-xwin --target x86_64-pc-windows-msvc",
     "tauri": "tauri",
     "test": "vitest run",

@@ -50,11 +50,15 @@ struct ApiPermissions { push: bool }
 struct ApiBranch { name: String }
 
 pub fn is_available() -> bool {
-    Command::new("gh").arg("--version").stdout(Stdio::null()).stderr(Stdio::null())
+    crate::platform::command(crate::platform::tool("gh")).arg("--version").stdout(Stdio::null()).stderr(Stdio::null())
         .status().is_ok_and(|status| status.success())
 }
 
 fn config_dir() -> Result<PathBuf, String> {
+    #[cfg(windows)]
+    let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from)
+        .ok_or("Cannot locate the user's Windows application data directory.")?;
+    #[cfg(not(windows))]
     let base = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
         .ok_or("Cannot locate the user's configuration directory.")?;
@@ -78,7 +82,7 @@ pub fn configure_git_command(command: &mut Command) -> bool {
 }
 
 fn gh_command() -> Result<Command, String> {
-    let mut command = Command::new("gh");
+    let mut command = crate::platform::command(crate::platform::tool("gh"));
     command.env("GH_CONFIG_DIR", config_dir()?)
         .env_remove("GH_TOKEN").env_remove("GITHUB_TOKEN")
         .env("GH_HOST", "github.com");
@@ -109,16 +113,7 @@ fn code_in(text: &str) -> Option<String> {
 }
 
 fn open_authorization_page() -> Result<(), String> {
-    #[cfg(target_os = "linux")]
-    {
-        Command::new("xdg-open").arg("https://github.com/login/device")
-            .env_remove("APPDIR").env_remove("APPIMAGE")
-            .env_remove("LD_LIBRARY_PATH").env_remove("LD_PRELOAD")
-            .stdout(Stdio::null()).stderr(Stdio::null()).spawn()
-            .map(|_| ()).map_err(|_| "Could not open the default browser. Open https://github.com/login/device manually.".into())
-    }
-    #[cfg(not(target_os = "linux"))]
-    { Err("Open https://github.com/login/device in your browser.".into()) }
+    crate::platform::open_github("https://github.com/login/device")
 }
 
 fn read_login_output(mut reader: impl Read, progress: Arc<Mutex<LoginProgress>>) {
@@ -158,7 +153,7 @@ pub fn github_status() -> GithubStatus {
 
 #[tauri::command]
 pub fn github_begin_login(state: tauri::State<'_, LoginState>) -> Result<LoginProgress, String> {
-    if !is_available() { return Err("GitHub CLI is not installed. On Fedora, install the `gh` package, then retry.".into()); }
+    if !is_available() { return Err("GitHub CLI is unavailable. Reinstall the complete Continuum Windows package, or install gh on your system, then retry.".into()); }
     if connected() { return Ok(LoginProgress { phase: "connected".into(), ..Default::default() }); }
     let progress = Arc::clone(&state.0);
     {
@@ -167,11 +162,14 @@ pub fn github_begin_login(state: tauri::State<'_, LoginState>) -> Result<LoginPr
         *current = LoginProgress { phase: "waiting".into(), user_code: None, message: None };
     }
     thread::spawn(move || {
-        let result = gh_command().and_then(|mut command| command
+        let result = gh_command().and_then(|mut command| {
+            // Our progress reader opens the browser when the code arrives.
+            // Windows has no `true` executable; use its built-in no-op instead.
+            command.env("GH_BROWSER", if cfg!(windows) { "cmd.exe /d /c rem" } else { "true" });
+            command
             .args(["auth", "login", "--hostname", "github.com", "--web", "--git-protocol", "https", "--skip-ssh-key"])
-            .env("GH_BROWSER", "true")
             .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()
-            .map_err(|_| "Could not start GitHub login.".to_string()));
+            .map_err(|_| "Could not start GitHub login.".to_string()) });
         let Ok(mut child) = result else {
             if let Ok(mut current) = progress.lock() { current.phase = "error".into(); current.message = Some("Could not start GitHub login.".into()); }
             return;
@@ -244,14 +242,7 @@ pub fn github_list_branches(full_name: String) -> Result<Vec<String>, String> {
 
 #[tauri::command]
 pub fn github_open_new_repository() -> Result<(), String> {
-    #[cfg(target_os = "linux")]
-    {
-        Command::new("xdg-open").arg("https://github.com/new")
-            .stdout(Stdio::null()).stderr(Stdio::null()).spawn()
-            .map(|_| ()).map_err(|_| "Could not open the browser. Visit https://github.com/new manually.".into())
-    }
-    #[cfg(not(target_os = "linux"))]
-    { Err("Open https://github.com/new in your browser.".into()) }
+    crate::platform::open_github("https://github.com/new")
 }
 
 #[cfg(test)]

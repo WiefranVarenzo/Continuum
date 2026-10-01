@@ -1,5 +1,7 @@
 # CP12 Platform Support and Known Limitations
 
+> **Windows pilot update — 2026-10-01:** Windows x64 now has a built/launched GNU NSIS package, platform adapters, packaged MCP/tools, and local Windows validation. This is not full Windows certification; physical microphone input on the reference VirtualBox guest remains unresolved. See the [current platform matrix](../architecture/CROSS-PLATFORM-ARCHITECTURE.md) and [Windows fix2 status](../releases/WINDOWS-0.12.0-fix2.md). The historical Linux qualification and remaining certification gates below are retained as evidence.
+
 ## Qualified Now
 
 - Host: AMD Ryzen 5 5600H, 16 GB RAM, x86-64 Linux/Fedora 44.

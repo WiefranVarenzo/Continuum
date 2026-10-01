@@ -42,3 +42,8 @@
 @media (max-width: 780px) { .capture-grid { grid-template-columns: 1fr; } .capture-heading-row { flex-direction: column; } }
 .capture-runtime{display:grid;gap:.18rem;margin:.8rem 0;padding:.65rem .8rem;border:1px solid var(--line);border-left:4px solid var(--brand);border-radius:10px;background:var(--panel);font-size:.78rem}.capture-runtime span{color:var(--muted)}.capture-runtime.attention{border-left-color:var(--warn)}
 .recording-description{display:grid;gap:16px;max-width:740px;margin:18px 0}.recording-description label{display:grid;gap:8px}.recording-description small{color:var(--muted);line-height:1.6}.recording-description button{justify-self:start}
+.microphone-settings{display:grid;gap:.65rem;margin:.8rem 0;padding:.85rem;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.microphone-settings label{display:grid;gap:.35rem;font-size:.82rem;font-weight:650}
+.microphone-settings select{width:100%;min-width:0;padding:.55rem;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);font:inherit}
+.microphone-settings button{justify-self:start}.microphone-settings small{color:var(--muted);line-height:1.5}
+.microphone-meter{display:grid;gap:.3rem;font-size:.8rem}.microphone-meter meter{width:100%;height:18px}.microphone-meter.attention small{color:#92400e}
