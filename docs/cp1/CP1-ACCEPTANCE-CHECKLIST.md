@@ -1,7 +1,7 @@
 # CP1 Acceptance Checklist
 
 > **Final status:** PASS  
-> **Date:** 2026-08-31; provider/MCP amendment revalidated 2026-09-03
+> **Date:** 2026-08-31; provider/MCP amendment revalidated 2026-09-03; HTML-first Human Documentation amendment revalidated 2026-09-04; capture backend decision revalidated 2026-09-09
 
 ## Product and Scope
 
@@ -30,6 +30,8 @@
 - [x] outbound model-provider and inbound MCP boundaries are separate and unambiguous.
 - [x] provider capability, routing, failover, provenance, and conformance contracts are defined.
 - [x] MCP transport, authorization, resource/tool, proposal, and client-compatibility contracts are defined.
+- [x] HTML-first Human Documentation, renderer-neutral model, Markdown compatibility, diagram selection, offline export, accessibility, and safe-rendering boundaries are defined.
+- [x] OS-mediated capture, explicit permission/indicator, segmentation, recovery, Evidence linkage, derivation, and release-qualification boundaries are defined.
 - [x] privacy gateway and classification are defined.
 - [x] named threats have mandatory controls.
 - [x] reference hardware, fixtures, SLOs, and benchmark method are defined.
@@ -39,6 +41,8 @@
 - [x] core diagrams agree with written architecture.
 - [x] consequential decisions have ADRs.
 - [x] ADR-006 records provider-neutral AI and MCP boundary decisions without reopening CP2/CP3.
+- [x] ADR-007 records HTML-first Human Documentation without invalidating CP3–CP5 deterministic report evidence or canonical data contracts.
+- [x] ADR-008 resolves the CP9 capture adapter while preserving CP1 privacy, portability, and bounded-resource invariants.
 - [x] all earlier open questions are accepted or deferred to an owner.
 - [x] requirement families map to architecture and planned tests.
 - [x] all AC-CP1-01–12 are PASS.

@@ -1,0 +1,13 @@
+---
+description: Continuum repo-wide handover and data-safety boundaries
+alwaysApply: true
+---
+
+# Continuum
+
+Read `README.md`, `docs/HANDOVER.md`, and `docs/MAINTAINER-GUIDE.md` before broad changes. Follow relevant CP/ADR documents and current code; historical validation is not current release proof.
+
+- Keep this source repository separate from users' project data, media, credentials, and build outputs.
+- Preserve local project data and user edits. Never pull remote project state into an open working project or force-push a snapshot.
+- AI suggestions require provenance and human review before canonical knowledge changes.
+- Test the touched boundary and report unverified OS/device behavior honestly.

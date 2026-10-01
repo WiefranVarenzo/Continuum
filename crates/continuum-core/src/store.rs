@@ -25,6 +25,16 @@ const MIGRATION_2: &str = include_str!("../migrations/0002_contract_alignment.sq
 const MIGRATION_3: &str = include_str!("../migrations/0003_research_core.sql");
 const MIGRATION_4: &str = include_str!("../migrations/0004_development_core.sql");
 const MIGRATION_5: &str = include_str!("../migrations/0005_code_intelligence.sql");
+const MIGRATION_6: &str = include_str!("../migrations/0006_cp5_1_hardening.sql");
+const MIGRATION_7: &str = include_str!("../migrations/0007_provenance_graph.sql");
+const MIGRATION_8: &str = include_str!("../migrations/0008_semantic_intelligence.sql");
+const MIGRATION_9: &str = include_str!("../migrations/0009_visual_intelligence.sql");
+const MIGRATION_10: &str = include_str!("../migrations/0010_research_capture.sql");
+const MIGRATION_11: &str = include_str!("../migrations/0011_checkpoint_context_engine.sql");
+const MIGRATION_12: &str = include_str!("../migrations/0012_ai_continuity_interface.sql");
+const MIGRATION_13: &str = include_str!("../migrations/0013_research_presentation_proposals.sql");
+const MIGRATION_14: &str = include_str!("../migrations/0014_reviewed_report_sources.sql");
+const MIGRATION_15: &str = include_str!("../migrations/0015_workspace_documents.sql");
 const MAX_ACTIVE_JOBS: i64 = 1_000;
 const MAX_ENTITY_JSON_BYTES: usize = 1024 * 1024;
 const MAX_CHECKPOINT_JSON_BYTES: usize = 2 * 1024 * 1024;
@@ -33,6 +43,42 @@ const MAX_CHECKPOINT_JSON_BYTES: usize = 2 * 1024 * 1024;
 pub struct ContinuityStore {
     pub(crate) root: PathBuf,
     pub(crate) manifest: ProjectManifest,
+}
+
+struct PendingContentFile {
+    path: PathBuf,
+    armed: bool,
+}
+
+impl Drop for PendingContentFile {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
+}
+
+struct PendingDirectory {
+    path: PathBuf,
+    armed: bool,
+}
+
+struct PriorCommandReceipt {
+    operation: String,
+    result_id: Option<String>,
+    project_id: String,
+    actor_kind: String,
+    actor_id: String,
+    command_type_version: i64,
+    payload_schema_version: i64,
+}
+
+impl Drop for PendingDirectory {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
 }
 
 impl ContinuityStore {
@@ -52,14 +98,21 @@ impl ContinuityStore {
                 "project name must contain 1..=200 characters".into(),
             ));
         }
-        if root.join(MANIFEST_FILE).exists() || root.join(LEDGER_FILE).exists() {
+        if root.exists() {
             return Err(CoreError::Conflict(format!(
-                "project already exists at {}",
+                "project destination already exists: {}",
                 root.display()
             )));
         }
-
-        fs::create_dir_all(root)?;
+        if let Some(parent) = root.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let staging_root = root.with_extension(format!("creating-{}", new_id()));
+        let mut pending = PendingDirectory {
+            path: staging_root.clone(),
+            armed: true,
+        };
+        fs::create_dir(&staging_root)?;
         for directory in [
             "artifacts/sha256",
             "staging",
@@ -67,14 +120,14 @@ impl ContinuityStore {
             "backups",
             "derived",
         ] {
-            fs::create_dir_all(root.join(directory))?;
+            fs::create_dir_all(staging_root.join(directory))?;
         }
 
         let project_id = new_id();
         let manifest = ProjectManifest::new(project_id.clone(), name.clone());
-        manifest.write_atomic(root)?;
+        manifest.write_atomic(&staging_root)?;
 
-        let mut connection = open_connection(&manifest.ledger_path(root))?;
+        let mut connection = open_connection(&manifest.ledger_path(&staging_root))?;
         apply_migrations(&mut connection)?;
         let now = Utc::now().to_rfc3339();
         let command = CommandContext::new(actor);
@@ -107,6 +160,9 @@ impl ContinuityStore {
             &json!({"name": manifest.name}),
         )?;
         tx.commit()?;
+        drop(connection);
+        fs::rename(&staging_root, root)?;
+        pending.armed = false;
 
         Ok(Self {
             root: root.to_path_buf(),
@@ -310,6 +366,7 @@ impl ContinuityStore {
         validate_nonempty(&input.entity_type, 100, "entity_type")?;
         if crate::research::is_reserved_domain_entity_type(&input.entity_type)
             || crate::development::is_development_entity_type(&input.entity_type)
+            || crate::provenance::is_provenance_entity_type(&input.entity_type)
         {
             return Err(CoreError::Validation(format!(
                 "{} is owned by a typed domain module; use its typed command API",
@@ -480,6 +537,7 @@ impl ContinuityStore {
         let existing_type = self.get_entity(entity_id)?.entity_type;
         if crate::research::is_reserved_domain_entity_type(&existing_type)
             || crate::development::is_development_entity_type(&existing_type)
+            || crate::provenance::is_provenance_entity_type(&existing_type)
         {
             return Err(CoreError::Validation(format!(
                 "{existing_type} is owned by a typed domain module; use its typed command API"
@@ -642,6 +700,7 @@ impl ContinuityStore {
         }
         let mut connection = self.connection()?;
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        crate::provenance::require_active_project(&tx, &self.manifest.project_id)?;
         if let Some(result) = prior_result(
             &tx,
             &self.manifest.project_id,
@@ -667,24 +726,54 @@ impl ContinuityStore {
             &input.relation_type,
             &target_type,
         )?;
+        crate::provenance::validate_provenance_relationship_pair(
+            &source_type,
+            &input.relation_type,
+            &target_type,
+        )?;
+        if input.relation_type == "supersedes"
+            && crate::provenance::relationship_would_cycle(
+                &tx,
+                &self.manifest.project_id,
+                &input.source_entity_id,
+                &input.target_entity_id,
+                "supersedes",
+            )?
+        {
+            return Err(CoreError::Validation(
+                "supersedes relationship would create a cycle".into(),
+            ));
+        }
         for source_id in &input.direct_source_ids {
             entity_type_in_project(&tx, &self.manifest.project_id, source_id)?;
         }
-        if let Some(supersedes_id) = &input.supersedes_id {
-            let prior_type: Option<String> = tx
+        let superseded_state = if let Some(supersedes_id) = &input.supersedes_id {
+            let prior: Option<(String, String, String, i64)> = tx
                 .query_row(
-                    "SELECT relation_type FROM relationships WHERE id=?1 AND project_id=?2",
+                    "SELECT relation_type,status,review_state,state_version FROM relationships
+                     WHERE id=?1 AND project_id=?2",
                     params![supersedes_id, self.manifest.project_id],
-                    |row| row.get(0),
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
                 )
                 .optional()?;
-            if prior_type.as_deref() != Some(input.relation_type.as_str()) {
+            if prior.as_ref().map(|value| value.0.as_str()) != Some(input.relation_type.as_str()) {
                 return Err(CoreError::Validation(
                     "superseded relationship must exist in this project and use the same type"
                         .into(),
                 ));
             }
-        }
+            if prior
+                .as_ref()
+                .is_some_and(|value| matches!(value.1.as_str(), "archived" | "superseded"))
+            {
+                return Err(CoreError::Validation(
+                    "retired or superseded relationship cannot be superseded again".into(),
+                ));
+            }
+            prior.map(|value| (supersedes_id.clone(), value.1, value.2, value.3))
+        } else {
+            None
+        };
         let id = new_id();
         let now = Utc::now().to_rfc3339();
         let direct_source_ids_json = bounded_json(
@@ -718,12 +807,13 @@ impl ContinuityStore {
         )?;
         if let Some(supersedes_id) = &input.supersedes_id {
             tx.execute(
-                "UPDATE relationships SET status='superseded',updated_at=?3
+                "UPDATE relationships SET status='superseded',state_version=state_version+1,
+                    updated_at=?3
                  WHERE id=?1 AND project_id=?2",
                 params![supersedes_id, self.manifest.project_id, now],
             )?;
         }
-        append_event_with_context(
+        let sequence = append_event_with_context(
             &tx,
             &self.manifest.project_id,
             command,
@@ -731,6 +821,25 @@ impl ContinuityStore {
             "relationship.created",
             &json!({"relationship_id": id, "type": input.relation_type, "source": input.source_entity_id, "target": input.target_entity_id}),
         )?;
+        if let Some((supersedes_id, prior_status, prior_review, prior_version)) = superseded_state {
+            tx.execute(
+                "INSERT INTO relationship_history(
+                    id,project_id,relationship_id,ledger_sequence,action,state_version,
+                    from_status,to_status,from_review_state,to_review_state,annotation,actor_id,occurred_at
+                 ) VALUES(?1,?2,?3,?4,'superseded',?5,?6,'superseded',?7,?7,'',?8,?9)",
+                params![
+                    new_id(),
+                    self.manifest.project_id,
+                    supersedes_id,
+                    sequence,
+                    prior_version + 1,
+                    prior_status,
+                    prior_review,
+                    command.actor.id,
+                    now
+                ],
+            )?;
+        }
         record_command_with_context(
             &tx,
             command,
@@ -750,7 +859,8 @@ impl ContinuityStore {
             .query_row(
                 "SELECT id,project_id,relation_type,relation_version,source_entity_id,source_entity_type,
                         target_entity_id,target_entity_type,status,origin_type,actor_id,confidence,
-                        review_state,direct_source_ids_json,supersedes_id,created_at,updated_at
+                        review_state,direct_source_ids_json,supersedes_id,created_at,updated_at,
+                        state_version,annotation,reviewed_at,reviewed_by,retired_at
                  FROM relationships WHERE id=?1 AND project_id=?2",
                 params![id, self.manifest.project_id],
                 |row| {
@@ -772,6 +882,11 @@ impl ContinuityStore {
                         row.get::<_, Option<String>>(14)?,
                         row.get::<_, String>(15)?,
                         row.get::<_, String>(16)?,
+                        row.get::<_, i64>(17)?,
+                        row.get::<_, String>(18)?,
+                        row.get::<_, Option<String>>(19)?,
+                        row.get::<_, Option<String>>(20)?,
+                        row.get::<_, Option<String>>(21)?,
                     ))
                 },
             )
@@ -792,10 +907,15 @@ impl ContinuityStore {
                     actor_id: raw.10,
                     confidence: raw.11,
                     review_state: raw.12,
+                    state_version: raw.17,
+                    annotation: raw.18,
                     direct_source_ids: serde_json::from_str(&raw.13)?,
                     supersedes_id: raw.14,
                     created_at: raw.15,
                     updated_at: raw.16,
+                    reviewed_at: raw.19,
+                    reviewed_by: raw.20,
+                    retired_at: raw.21,
                 })
             })
     }
@@ -867,7 +987,7 @@ impl ContinuityStore {
         }
         self.ingest_artifact_reader_with_context(
             &CommandContext::system_with_id(command_id),
-            fs::File::open(source)?,
+            open_regular_file_nofollow(source)?,
             media_type,
             ArtifactClassification::Internal,
             OriginKind::Import,
@@ -947,9 +1067,63 @@ impl ContinuityStore {
                 reason: "staged bytes changed before finalization".into(),
             });
         }
+        let mut connection = self.connection()?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if let Some(Some(result_id)) =
+            prior_result(&tx, &self.manifest.project_id, command, "FinalizeArtifact")?
+        {
+            let prior: Option<(String, String)> = tx
+                .query_row(
+                    "SELECT a.sha256,c.payload_json FROM commands c
+                     JOIN artifacts a ON a.id=c.result_id AND a.project_id=c.project_id
+                     WHERE c.project_id=?1 AND c.operation='FinalizeArtifact'
+                       AND (c.id=?2 OR c.idempotency_key=?3)
+                     ORDER BY CASE WHEN c.id=?2 THEN 0 ELSE 1 END LIMIT 1",
+                    params![
+                        self.manifest.project_id,
+                        command.command_id,
+                        command.idempotency_key
+                    ],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?;
+            let Some((stored_artifact_hash, prior_payload_json)) = prior else {
+                let _ = fs::remove_file(&staging_path);
+                return Err(CoreError::Conflict(
+                    "idempotent artifact command points to a missing result".into(),
+                ));
+            };
+            let prior_payload: Value = serde_json::from_str(&prior_payload_json)?;
+            let prior_hash = prior_payload
+                .get("sha256")
+                .and_then(Value::as_str)
+                .unwrap_or(&stored_artifact_hash);
+            let prior_media_type = prior_payload.get("media_type").and_then(Value::as_str);
+            let prior_classification = prior_payload.get("classification").and_then(Value::as_str);
+            let prior_origin = prior_payload.get("origin").and_then(Value::as_str);
+            let prior_metadata = prior_payload.get("metadata");
+            if prior_hash != hash
+                || prior_media_type != Some(media_type)
+                || prior_classification != Some(classification.as_str())
+                || prior_origin.is_some_and(|value| value != origin.as_str())
+                || prior_metadata.is_some_and(|value| value != metadata)
+            {
+                let _ = fs::remove_file(&staging_path);
+                return Err(CoreError::Conflict(
+                    "idempotency key was reused with different artifact bytes or attributes".into(),
+                ));
+            }
+            tx.commit()?;
+            fs::remove_file(&staging_path)?;
+            return self.get_artifact(&result_id);
+        }
         let relative = relative_content_path(&hash)?;
         let final_path = self.root.join(&relative);
         fs::create_dir_all(final_path.parent().expect("content path has parent"))?;
+        let mut pending_content = PendingContentFile {
+            path: final_path.clone(),
+            armed: false,
+        };
         if final_path.exists() {
             let (existing_hash, existing_size) = hash_file(&final_path)?;
             if existing_hash != hash || existing_size != staged_size {
@@ -961,15 +1135,7 @@ impl ContinuityStore {
             fs::remove_file(&staging_path)?;
         } else {
             fs::rename(&staging_path, &final_path)?;
-        }
-
-        let mut connection = self.connection()?;
-        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        if let Some(Some(result_id)) =
-            prior_result(&tx, &self.manifest.project_id, command, "FinalizeArtifact")?
-        {
-            tx.commit()?;
-            return self.get_artifact(&result_id);
+            pending_content.armed = true;
         }
         let existing: Option<(String, String)> = tx
             .query_row(
@@ -1026,9 +1192,12 @@ impl ContinuityStore {
             "FinalizeArtifact",
             Some(&id),
             None,
-            &json!({"media_type": media_type, "classification": classification.as_str()}),
+            &json!({"sha256":hash,"byte_size":staged_size,"media_type":media_type,
+                "classification":classification.as_str(),"origin":origin.as_str(),
+                "metadata":metadata}),
         )?;
         tx.commit()?;
+        pending_content.armed = false;
         self.get_artifact(&id)
     }
 
@@ -1077,6 +1246,47 @@ impl ContinuityStore {
             created_by: raw.12,
             updated_at: raw.13,
         })
+    }
+
+    pub fn read_artifact_bounded(&self, id: &str, max_bytes: u64) -> Result<Vec<u8>> {
+        const ABSOLUTE_PREVIEW_MAX: u64 = 32 * 1024 * 1024;
+        if max_bytes == 0 || max_bytes > ABSOLUTE_PREVIEW_MAX {
+            return Err(CoreError::Validation(
+                "artifact read bound must be within 1..=32 MiB".into(),
+            ));
+        }
+        let artifact = self.get_artifact(id)?;
+        if artifact.availability != ArtifactAvailability::Available.as_str() {
+            return Err(CoreError::Conflict(
+                "artifact payload is unavailable".into(),
+            ));
+        }
+        let byte_size = u64::try_from(artifact.byte_size)
+            .map_err(|_| CoreError::Validation("artifact size is invalid".into()))?;
+        if byte_size > max_bytes {
+            return Err(CoreError::Validation(format!(
+                "artifact exceeds the {max_bytes}-byte read bound"
+            )));
+        }
+        let expected_relative = relative_content_path(&artifact.sha256)?;
+        if path_to_slashes(&expected_relative) != artifact.relative_path {
+            return Err(CoreError::ArtifactIntegrity {
+                path: self.root.join(&artifact.relative_path),
+                reason: "artifact metadata path does not match its hash".into(),
+            });
+        }
+        let path = self.root.join(expected_relative);
+        let mut reader = open_regular_file_nofollow(&path)?.take(max_bytes.saturating_add(1));
+        let mut bytes = Vec::with_capacity(usize::try_from(byte_size).unwrap_or_default());
+        reader.read_to_end(&mut bytes)?;
+        if bytes.len() as u64 != byte_size || hex::encode(Sha256::digest(&bytes)) != artifact.sha256
+        {
+            return Err(CoreError::ArtifactIntegrity {
+                path,
+                reason: "artifact preview failed size or SHA-256 verification".into(),
+            });
+        }
+        Ok(bytes)
     }
 
     pub fn set_artifact_classification(
@@ -1917,6 +2127,36 @@ impl ContinuityStore {
             &self.manifest.project_id,
             &mut report,
         )?;
+        crate::provenance::append_provenance_integrity_issues(
+            &connection,
+            &self.manifest.project_id,
+            &mut report,
+        )?;
+        crate::semantic::append_semantic_integrity_issues(
+            &connection,
+            &self.manifest.project_id,
+            &mut report,
+        )?;
+        crate::human_document::append_human_document_integrity_issues(
+            &connection,
+            &self.manifest.project_id,
+            &mut report,
+        )?;
+        crate::capture::append_capture_integrity_issues(
+            &connection,
+            &self.manifest.project_id,
+            &mut report,
+        )?;
+        crate::context::append_context_integrity_issues(
+            &connection,
+            &self.manifest.project_id,
+            &mut report,
+        )?;
+        crate::mcp::append_mcp_integrity_issues(
+            &connection,
+            &self.manifest.project_id,
+            &mut report,
+        )?;
         Ok(report)
     }
 
@@ -1943,21 +2183,30 @@ impl ContinuityStore {
                 destination.display()
             )));
         }
+        let destination = resolve_new_destination(destination)?;
+        let project_root = fs::canonicalize(&self.root)?;
+        if destination.starts_with(&project_root) {
+            return Err(CoreError::Validation(
+                "project export destination must be outside the source project".into(),
+            ));
+        }
         let integrity = self.verify_integrity()?;
         if !integrity.is_healthy() {
             return Err(CoreError::Conflict(
                 "project export blocked because integrity verification failed".into(),
             ));
         }
-        fs::create_dir_all(destination)?;
-        fs::copy(
-            self.root.join(MANIFEST_FILE),
-            destination.join(MANIFEST_FILE),
-        )?;
-        self.backup_database(destination.join(LEDGER_FILE))?;
-        copy_tree(&self.root.join("artifacts"), &destination.join("artifacts"))?;
+        let staging = destination.with_extension(format!("exporting-{}", new_id()));
+        let mut pending = PendingDirectory {
+            path: staging.clone(),
+            armed: true,
+        };
+        fs::create_dir(&staging)?;
+        fs::copy(self.root.join(MANIFEST_FILE), staging.join(MANIFEST_FILE))?;
+        self.backup_database(staging.join(LEDGER_FILE))?;
+        copy_tree(&self.root.join("artifacts"), &staging.join("artifacts"))?;
         fs::write(
-            destination.join("continuum.export.json"),
+            staging.join("continuum.export.json"),
             serde_json::to_vec_pretty(&json!({
                 "export_version": 1,
                 "project_id": self.manifest.project_id,
@@ -1966,11 +2215,13 @@ impl ContinuityStore {
                 "integrity": "verified"
             }))?,
         )?;
+        fs::rename(&staging, &destination)?;
+        pending.armed = false;
         Ok(())
     }
 
     pub fn import_export(source: impl AsRef<Path>, destination: impl AsRef<Path>) -> Result<Self> {
-        let source = source.as_ref();
+        let source = fs::canonicalize(source.as_ref())?;
         let destination = destination.as_ref();
         if destination.exists() {
             return Err(CoreError::Conflict(format!(
@@ -1978,9 +2229,15 @@ impl ContinuityStore {
                 destination.display()
             )));
         }
-        ProjectManifest::load(source)?;
+        let destination = resolve_new_destination(destination)?;
+        if destination.starts_with(&source) {
+            return Err(CoreError::Validation(
+                "project import destination must be outside the source export".into(),
+            ));
+        }
+        ProjectManifest::load(&source)?;
         let staging = destination.with_extension(format!("importing-{}", new_id()));
-        copy_tree(source, &staging)?;
+        copy_tree(&source, &staging)?;
         for directory in ["staging", "quarantine", "backups", "derived"] {
             fs::create_dir_all(staging.join(directory))?;
         }
@@ -1991,8 +2248,8 @@ impl ContinuityStore {
                 "import verification failed; staged copy retained for diagnostics".into(),
             ));
         }
-        fs::rename(&staging, destination)?;
-        Self::open(destination)
+        fs::rename(&staging, &destination)?;
+        Self::open(&destination)
     }
 
     #[doc(hidden)]
@@ -2032,6 +2289,16 @@ fn apply_migrations(connection: &mut Connection) -> Result<()> {
         (3_u32, "research_core", MIGRATION_3),
         (4_u32, "development_core", MIGRATION_4),
         (5_u32, "code_intelligence", MIGRATION_5),
+        (6_u32, "cp5_1_hardening", MIGRATION_6),
+        (7_u32, "provenance_graph", MIGRATION_7),
+        (8_u32, "semantic_intelligence", MIGRATION_8),
+        (9_u32, "visual_intelligence", MIGRATION_9),
+        (10_u32, "research_capture", MIGRATION_10),
+        (11_u32, "checkpoint_context_engine", MIGRATION_11),
+        (12_u32, "ai_continuity_interface", MIGRATION_12),
+        (13_u32, "research_presentation_proposals", MIGRATION_13),
+        (14_u32, "reviewed_report_sources", MIGRATION_14),
+        (15_u32, "workspace_documents", MIGRATION_15),
     ];
     for (version, name, sql) in migrations {
         let checksum = hex::encode(Sha256::digest(sql.as_bytes()));
@@ -2117,15 +2384,44 @@ fn backup_connection(source: &Connection, destination: &Path) -> Result<()> {
     Ok(())
 }
 
+fn resolve_new_destination(destination: &Path) -> Result<PathBuf> {
+    let name = destination
+        .file_name()
+        .ok_or_else(|| CoreError::Validation("destination must name a project directory".into()))?;
+    let parent = destination
+        .parent()
+        .ok_or_else(|| CoreError::Validation("destination must have a parent directory".into()))?;
+    fs::create_dir_all(parent)?;
+    Ok(fs::canonicalize(parent)?.join(name))
+}
+
+fn open_regular_file_nofollow(path: &Path) -> Result<fs::File> {
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+    }
+    let file = options.open(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(CoreError::Validation(
+            "artifact source must be a regular file".into(),
+        ));
+    }
+    Ok(file)
+}
+
 pub(crate) fn prior_result(
     tx: &Transaction<'_>,
     project_id: &str,
     command: &CommandContext,
     operation: &str,
 ) -> Result<Option<Option<String>>> {
-    let existing: Option<(String, Option<String>)> = tx
+    let existing: Option<PriorCommandReceipt> = tx
         .query_row(
-            "SELECT operation,result_id FROM commands
+            "SELECT operation,result_id,project_id,actor_kind,actor_id,
+                    command_type_version,payload_schema_version FROM commands
              WHERE id=?1 OR (project_id=?2 AND operation=?3 AND idempotency_key=?4)
              ORDER BY CASE WHEN id=?1 THEN 0 ELSE 1 END LIMIT 1",
             params![
@@ -2134,17 +2430,39 @@ pub(crate) fn prior_result(
                 operation,
                 command.idempotency_key
             ],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| {
+                Ok(PriorCommandReceipt {
+                    operation: row.get(0)?,
+                    result_id: row.get(1)?,
+                    project_id: row.get(2)?,
+                    actor_kind: row.get(3)?,
+                    actor_id: row.get(4)?,
+                    command_type_version: row.get(5)?,
+                    payload_schema_version: row.get(6)?,
+                })
+            },
         )
         .optional()?;
     match existing {
-        Some((existing_operation, _)) if existing_operation != operation => {
-            Err(CoreError::Conflict(format!(
-                "command {} was already used for {existing_operation}",
-                command.command_id
-            )))
+        Some(existing) if existing.operation != operation => Err(CoreError::Conflict(format!(
+            "command {} was already used for {}",
+            command.command_id, existing.operation
+        ))),
+        Some(existing) if existing.project_id != project_id => Err(CoreError::Conflict(format!(
+            "command {} belongs to a different project",
+            command.command_id
+        ))),
+        Some(existing)
+            if existing.actor_kind != command.actor.kind.as_str()
+                || existing.actor_id != command.actor.id
+                || existing.command_type_version != i64::from(command.command_type_version)
+                || existing.payload_schema_version != i64::from(command.payload_schema_version) =>
+        {
+            Err(CoreError::Conflict(
+                "idempotent retry changed the actor or command schema envelope".into(),
+            ))
         }
-        Some((_, result)) => Ok(Some(result)),
+        Some(existing) => Ok(Some(existing.result_id)),
         None => Ok(None),
     }
 }
@@ -2436,6 +2754,23 @@ fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn presentation_migration_preserves_old_proposals_and_immutability() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch("PRAGMA foreign_keys=OFF; CREATE TABLE projects(id TEXT PRIMARY KEY); CREATE TABLE mcp_client_grants(id TEXT PRIMARY KEY); CREATE TABLE mcp_sessions(id TEXT PRIMARY KEY);").unwrap();
+        let legacy = MIGRATION_12.split_once("CREATE TABLE external_proposals").unwrap().1.split("CREATE TRIGGER mcp_grant_scope_immutable").next().unwrap();
+        connection.execute_batch(&format!("CREATE TABLE external_proposals{legacy}")).unwrap();
+        let insert = "INSERT INTO external_proposals(id,project_id,grant_id,idempotency_key,proposal_kind,scope,title,rationale,payload_json,source_refs_json,payload_fingerprint,status,created_at,expires_at) VALUES(?1,'p','g',?1,?2,'research','Preserved','Reason','{}','[]',?3,'pending','2026-01-01','2027-01-01')";
+        connection.execute(insert, params!["old", "research_note", "a".repeat(64)]).unwrap();
+        connection.execute_batch("BEGIN IMMEDIATE").unwrap();
+        connection.execute_batch(MIGRATION_13).unwrap();
+        connection.execute_batch("COMMIT").unwrap();
+        assert_eq!(connection.query_row("SELECT title FROM external_proposals WHERE id='old'", [], |r| r.get::<_,String>(0)).unwrap(), "Preserved");
+        for kind in ["research_synthesis", "diagram_plan"] { connection.execute(insert, params![kind, kind, "b".repeat(64)]).unwrap(); }
+        assert!(connection.execute("UPDATE external_proposals SET payload_json='[]' WHERE id='old'", []).is_err());
+        assert!(connection.execute(insert, params!["invalid", "unrecognized", "c".repeat(64)]).is_err());
+    }
 
     #[test]
     fn failed_migration_rolls_back_every_statement() {
@@ -2792,6 +3127,110 @@ mod tests {
             )
             .unwrap();
         assert_eq!(preserved_baseline, 1);
+        assert_eq!(fs::read_dir(root.join("backups")).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn v5_project_migrates_alias_and_cache_state_losslessly_to_cp5_1() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("cp5-project");
+        fs::create_dir_all(&root).unwrap();
+        let project_id = new_id();
+        let repository_id = new_id();
+        let baseline_id = new_id();
+        let file_id = new_id();
+        let manifest = ProjectManifest::new(project_id.clone(), "CP5 fixture".into());
+        manifest.write_atomic(&root).unwrap();
+        let mut connection = open_connection(&manifest.ledger_path(&root)).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE schema_migrations(
+                    version INTEGER PRIMARY KEY,name TEXT NOT NULL,checksum TEXT NOT NULL,
+                    applied_at TEXT NOT NULL
+                );",
+            )
+            .unwrap();
+        for (version, name, sql) in [
+            (1_u32, "core", MIGRATION_1),
+            (2_u32, "contract_alignment", MIGRATION_2),
+            (3_u32, "research_core", MIGRATION_3),
+            (4_u32, "development_core", MIGRATION_4),
+            (5_u32, "code_intelligence", MIGRATION_5),
+        ] {
+            let checksum = hex::encode(Sha256::digest(sql.as_bytes()));
+            apply_single_migration(&mut connection, version, name, sql, &checksum).unwrap();
+        }
+        let now = Utc::now().to_rfc3339();
+        connection.execute("INSERT INTO projects(id,name,status,lifecycle_version,ledger_sequence,created_at,updated_at)
+            VALUES(?1,'CP5 fixture','active',1,0,?2,?2)",params![project_id,now]).unwrap();
+        connection
+            .execute(
+                "INSERT INTO space_capabilities(project_id,space,enabled,updated_at)
+            VALUES(?1,'research',0,?2),(?1,'development',1,?2)",
+                params![project_id, now],
+            )
+            .unwrap();
+        for (id, entity_type, title) in [
+            (&repository_id, "repository", "Repository"),
+            (&baseline_id, "repository_baseline", "Baseline"),
+            (&file_id, "code_entity", "src/lib.rs"),
+        ] {
+            connection.execute("INSERT INTO entities(id,project_id,entity_type,title,status,version,legacy_origin,data_json,
+                created_at,updated_at,entity_schema_version,origin_type,metadata_json,created_by,updated_by)
+                VALUES(?1,?2,?3,?4,'active',1,'system','{}',?5,?5,1,'deterministic','{}','continuum-core','continuum-core')",
+                params![id,project_id,entity_type,title,now]).unwrap();
+        }
+        let fingerprint = "a".repeat(64);
+        connection
+            .execute(
+                "INSERT INTO repositories(entity_id,project_id,root_path,root_fingerprint,
+            git_common_dir_fingerprint,object_format,adapter_version,attached_at,last_observed_at)
+            VALUES(?1,?2,'/fixture/repository',?3,?3,'sha1','continuum-git-v1',?4,?4)",
+                params![repository_id, project_id, fingerprint, now],
+            )
+            .unwrap();
+        connection.execute("INSERT INTO repository_baselines(entity_id,project_id,repository_id,head_oid,
+            head_ref,branch_name,worktree_fingerprint,worktree_status_json,observed_at,previous_baseline_id,
+            relation_to_previous,adapter_version)
+            VALUES(?1,?2,?3,?4,'refs/heads/main','main',?5,'[]',?6,NULL,'initial','continuum-git-v1')",
+            params![baseline_id,project_id,repository_id,"b".repeat(40),fingerprint,now]).unwrap();
+        connection.execute("INSERT INTO code_entities(entity_id,project_id,repository_id,entity_kind,stable_key,
+            language,first_seen_baseline_id) VALUES(?1,?2,?3,'file','file:src/lib.rs','rust',?4)",
+            params![file_id,project_id,repository_id,baseline_id]).unwrap();
+        connection.execute("INSERT INTO code_entity_aliases(repository_id,alias_kind,alias_value,code_entity_id,
+            first_seen_baseline_id) VALUES(?1,'path','src/lib.rs',?2,?3)",
+            params![repository_id,file_id,baseline_id]).unwrap();
+        connection.execute("INSERT INTO analyzer_cache(content_sha256,language,analyzer_id,analyzer_version,
+            output_schema_version,output_json,created_at) VALUES(?1,'rust','code-intelligence-file','v1',1,'{}',?2)",
+            params!["c".repeat(64),now]).unwrap();
+        drop(connection);
+
+        let store = ContinuityStore::open(&root).unwrap();
+        let connection = store.debug_connection().unwrap();
+        let alias: (String, String, Option<String>) = connection
+            .query_row(
+                "SELECT first_seen_baseline_id,last_seen_baseline_id,retired_at_baseline_id
+             FROM code_entity_aliases WHERE code_entity_id=?1",
+                [&file_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(alias, (baseline_id.clone(), baseline_id, None));
+        let cache: (i64, String) = connection
+            .query_row(
+                "SELECT byte_size,last_accessed_at FROM analyzer_cache",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(cache.0, 2);
+        assert_eq!(cache.1, now);
+        let version: u32 = connection
+            .query_row("SELECT max(version) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(version, CORE_SCHEMA_VERSION);
         assert_eq!(fs::read_dir(root.join("backups")).unwrap().count(), 1);
     }
 }

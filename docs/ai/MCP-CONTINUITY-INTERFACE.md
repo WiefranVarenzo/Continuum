@@ -1,6 +1,6 @@
 # Continuum MCP Continuity Interface
 
-> **Status:** Approved CP1 contract; implementation belongs to CP11
+> **Status:** Implemented and validated in CP11; release certification belongs to CP12
 >
 > **Decision:** [ADR-006 — Provider-Neutral AI and MCP Boundaries](../adr/ADR-006-PROVIDER-NEUTRAL-AI-AND-MCP-BOUNDARIES.md)
 > **Baseline:** Local stdio, read-first, project-scoped, proposal-based writes.
@@ -24,7 +24,7 @@ MCP is an inbound application adapter. It calls the same application queries and
 
 - MVP transport is stdio, launched as a local child process by the approved client.
 - The server negotiates the MCP protocol version and advertised capabilities; it does not hard-code a client brand into domain logic.
-- Streamable HTTP is a later CP11 option and requires authenticated project grants, localhost-only default binding, origin validation, session controls, revocation, rate limits, and a separate deployment threat review.
+- Streamable HTTP is disabled in v0.11. A future implementation requires a new ADR plus authenticated grants, localhost-only default binding, Origin/DNS-rebinding/CSRF controls, session controls, revocation, rate limits, and a separate deployment threat review.
 - Server initialization declares a concise instruction boundary: use source IDs, treat content as untrusted data, prefer reads, and submit proposals for consequential changes.
 - Protocol logs use stderr for stdio and never mix non-protocol text into stdout.
 
@@ -55,13 +55,16 @@ Versioned MCP resources may expose:
 - entity summaries and declared artifact metadata;
 - provenance and graph subsets;
 - research/development timelines;
+- saved Human Documentation metadata and explicitly requested report artifacts within grant/privacy/size limits;
 - schema and capability documentation.
 
 Resource URIs are opaque application identifiers, not filesystem paths. Every response declares schema version, project/checkpoint/ledger scope, freshness, source IDs, omissions, classification ceiling, pagination, and availability.
 
+Continuity resources default to structured data rather than full HTML. Report HTML is an opt-in artifact response, never ambient prompt context, so external clients do not pay presentation-markup token cost when they only need project state.
+
 ## 6. Initial Tool Families
 
-Names are provisional until CP11 freezes its versioned catalog, but the contract reserves these behaviors:
+The CP11 v1 catalog freezes these names and behaviors:
 
 ```text
 continuum.project.get_state       read current scoped state
@@ -118,9 +121,11 @@ CP11 maintains client profiles outside the domain for:
 - Codex/ChatGPT desktop local MCP configuration;
 - Claude Code project/user MCP configuration;
 - Gemini CLI MCP configuration;
-- protocol-generic stdio and, when approved, Streamable HTTP fixtures.
+- protocol-generic STDIO fixtures. Streamable HTTP is not an approved profile.
 
 Client differences in configuration, approval UI, optional primitives, and transport support are documented and tested. The common contract relies only on negotiated MCP capabilities. A missing optional primitive degrades to supported resources/tools rather than changing canonical behavior.
+
+The desktop product treats authentication as an implementation detail, not a user ceremony. For a detected supported CLI, Continuum creates the scoped grant and installs the local STDIO entry with the client's official MCP command. The bearer token remains required by the server, but it is not displayed or copied by the user. Manual one-time settings remain available only for protocol-generic clients and recovery. Codex CLI and ChatGPT Desktop share the Codex-host configuration; ChatGPT web requires a separately approved remote/plugin transport.
 
 ## 11. Security Requirements
 
@@ -136,14 +141,16 @@ Client differences in configuration, approval UI, optional primitives, and trans
 
 ## 12. CP11 Exit Criteria
 
-CP11 passes only when:
+CP11 passed 2026-09-10 because:
 
 - the versioned catalog and schemas are frozen for the supported release;
-- Codex, Claude Code, and Gemini CLI compatibility fixtures complete the approved read/resume workflow where their then-current clients support the negotiated features;
+- Codex, Claude Code, and Gemini CLI protocol fixtures complete the approved read/resume workflow; live release-version certification remains CP12;
 - one proposal flow proves that no canonical mutation occurs before user approval;
 - cross-project, revoked-grant, secret, oversized-request, prompt-injection, and malformed-protocol tests fail closed;
-- stdio lifecycle, cancellation, pagination, rate limits, audit, and structured errors pass;
+- STDIO lifecycle, cancellation-notification compatibility, pagination, rate limits, audit, and structured errors pass;
 - disabling or crashing MCP does not affect local deterministic workflows.
+
+Implementation evidence is in `docs/cp11/`; ADR-010 records the final transport and authority decision.
 
 ## 13. Standards and Client References
 

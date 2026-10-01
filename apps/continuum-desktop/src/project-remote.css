@@ -1,0 +1,21 @@
+.launcher-tabs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.project-remote-panel { margin-top: 1.25rem; border-top: 1px solid var(--line); padding-top: 1.15rem; display: grid; gap: .8rem; }
+.project-remote-panel h3 { margin: .2rem 0; font-size: 1.08rem; }
+.project-remote-panel p { margin: .2rem 0; color: var(--muted); font-size: .84rem; line-height: 1.5; }
+.project-remote-panel form { display: grid; gap: .7rem; }
+.project-remote-panel form > label:not(.remote-confirm) { display: grid; gap: .35rem; font-size: .78rem; font-weight: 780; }
+.project-remote-panel input:not([type="checkbox"]) { width: 100%; min-width: 0; padding: .7rem; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); font: inherit; }
+.project-remote-panel input[readonly] { opacity: .8; }
+.project-remote-panel small { color: var(--muted); overflow-wrap: anywhere; }
+.project-remote-panel .remote-confirm { display: flex; align-items: start; gap: .5rem; max-width: 75ch; font-size: .8rem; line-height: 1.45; }
+.project-remote-panel .remote-confirm input { margin-top: .2rem; }
+.project-remote-panel .remote-warning { padding: .7rem .8rem; border: 1px solid var(--line); border-radius: 10px; overflow-wrap: anywhere; }
+.project-remote-panel .remote-footnote { border-top: 1px solid var(--line); padding-top: .75rem; }
+.github-picker { display: grid; gap: .65rem; padding: .9rem; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--panel) 90%, var(--brand) 10%); }
+.github-picker-heading { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.github-picker-heading span { color: var(--muted); font-size: .8rem; }
+.github-picker p, .github-picker small { margin: 0; color: var(--muted); font-size: .8rem; line-height: 1.5; overflow-wrap: anywhere; }
+.github-picker label { display: grid; gap: .35rem; font-size: .78rem; font-weight: 780; }
+.github-picker select { width: 100%; min-width: 0; padding: .7rem; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); font: inherit; }
+.github-picker button { justify-self: start; border: 1px solid var(--line); border-radius: 10px; padding: .6rem .8rem; background: var(--panel); color: var(--ink); font: inherit; font-size: .8rem; font-weight: 800; cursor: pointer; }
+.github-picker button:disabled { opacity: .55; cursor: not-allowed; }

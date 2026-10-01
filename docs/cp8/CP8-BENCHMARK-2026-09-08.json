@@ -1,0 +1,49 @@
+{
+  "arch": "x86_64",
+  "build": "0.8.0",
+  "checkpoint": "CP8",
+  "correctness": "all projections validated, offline dependency list empty, and final integrity scan healthy",
+  "cpu": "AMD Ryzen 5 5600H with Radeon Graphics",
+  "fixture": {
+    "entities": 300,
+    "graph_edge_budget": 500,
+    "graph_node_budget": 200,
+    "name": "human-document-300-v1",
+    "relationships": 600
+  },
+  "memory": "15745616 kB",
+  "milliseconds": {
+    "cold_composition": 351.473132,
+    "cold_html_markdown_render": 4.305456,
+    "warm_compose_and_render": {
+      "max": 373.955124,
+      "p50": 359.043032,
+      "p95": 371.822203
+    },
+    "warm_composition": {
+      "max": 369.156007,
+      "p50": 354.573636,
+      "p95": 367.67393300000003
+    },
+    "warm_html_markdown_render": {
+      "max": 4.7986569999999995,
+      "p50": 4.266413,
+      "p95": 4.5780710000000004
+    }
+  },
+  "os": "linux",
+  "output": {
+    "html_bytes": 197232,
+    "markdown_bytes": 142622,
+    "offline_dependencies": 0
+  },
+  "protocol": {
+    "network_included": false,
+    "samples": 30,
+    "warmups": 5
+  },
+  "targets_ms": {
+    "cached_first_useful_overview_p95": 2000,
+    "compose_and_local_export_p95": 5000
+  }
+}

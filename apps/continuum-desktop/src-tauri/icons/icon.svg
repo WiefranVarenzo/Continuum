@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Continuum">
+  <rect width="512" height="512" rx="112" fill="#14241c"/>
+  <path d="M126 178c45-69 147-73 201-13l32 36-49 44-32-36c-27-30-78-28-101 7-18 27-12 64 14 84 29 22 70 17 93-11l42 37c-43 51-119 61-173 20-50-38-63-110-27-168Z" fill="#79d9b5"/>
+  <circle cx="356" cy="320" r="36" fill="#f2ba64"/>
+</svg>

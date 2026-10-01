@@ -1,6 +1,6 @@
 # Continuum Domain Model
 
-> **Status:** Approved baseline; provider/MCP provenance amendment accepted 2026-09-03; implemented through CP5
+> **Status:** Approved baseline; provider/MCP provenance amendment accepted 2026-09-03; implemented through CP11
 > **Scope:** Canonical vocabulary, ownership, lifecycle, relationships, provenance, and invariants.
 
 ## 1. Common Envelope
@@ -34,9 +34,19 @@ AI proposals use separate candidate records until accepted. Their provenance dis
 - Relationship — typed edge between stable entity IDs.
 - AuditEvent — append-only material transition record.
 - Job — durable background-work state.
-- Checkpoint — immutable bookmark at a ledger sequence.
-- ContextPack — ephemeral or explicitly saved retrieval artifact.
+- Checkpoint — immutable scope-aware bookmark at an exact ledger sequence with deterministic state, exact entity/Artifact/repository/capture boundary, privacy snapshot, optional reviewed semantic snapshot, fingerprint, and supersession.
+- ContextPack — purpose/audience-bound, deterministic, progressively selected and budgeted machine context; ephemeral by default or immutable when explicitly saved with exact source snapshots and omission metadata.
+- MCPClientGrant — immutable, expiring, revocable project/client/scope/tool/resource/privacy/budget authority; its raw bearer token is never canonical data.
+- MCPSession — negotiated transport/protocol/client lifecycle bound to exactly one grant and project.
+- ExternalProposal — immutable, idempotent, typed, source-referenced external-client candidate awaiting human review; it is not a canonical Research or Development entity.
+- MCPAuditRecord — sanitized access/denial/completion metadata with correlation, sizes, and duration but no token or denied content.
 - GeneratedArtifact — report, diagram, summary, or explanation with source state.
+- HumanDocument — immutable renderer-neutral report projection bound to source versions, Checkpoint/ledger position, audience, classification, omissions, citations, contribution authorship, and a material fingerprint; it is derived and never canonical project truth.
+- HumanDocumentExport — format-specific HTML or Markdown Artifact projection with content hash, renderer/template version, and offline asset manifest.
+- SemanticTask — bounded provider-neutral request frozen to source versions/hashes, policy, prompt/schema, route, and resource budget.
+- SemanticAttempt — immutable terminal metadata for one provider route, including privacy decision, exact model, usage, latency, and sanitized failure.
+- AICandidate — non-canonical, schema- and grounding-validated proposal pending human review.
+- AIConsent — revocable user authority bound to a provider and either project-internal or exact sensitive request scope.
 
 ### Research Space
 
@@ -165,6 +175,7 @@ Normal deletion archives or tombstones canonical metadata to preserve referentia
 11. Project-scoped entities cannot link across projects.
 12. Capability disablement never deletes domain data.
 13. Provider/model and MCP client identity are provenance attributes, never canonical authority or mandatory dependencies.
+14. Human Document, HTML, Markdown, diagram layout, and render caches remain derived projections; compact presentation cannot remove the ability to reach cited source state.
 
 ## 10. CP2 Minimum Domain Slice
 
@@ -181,3 +192,9 @@ CP4 implements Repository attachment/relocation, immutable RepositoryBaseline an
 ## 13. CP5 Implemented Code Intelligence Slice
 
 CP5 implements immutable AnalysisRuns, stable repository-scoped CodeEntity and Test identities, baseline-specific structural/dependency/configuration/test observations, explicit limitations, versioned analyzer cache, user-authored Test verification links, and immutable observed TestRuns. Current presence is projected as active or unavailable while historical observations remain immutable; committed rename and later reappearance preserve identity. CP6 owns full provenance traversal, graph gap validation, and LearningFeedback semantics.
+
+CP9 implements CaptureSession with versioned source permissions and lifecycle, immutable CaptureSegment and CaptureMarker records, external capture observations, Evidence links, and source-preserving CaptureDerivations. Capture is a Research input capability and creates no Finding, Decision, Requirement, ChangeSet, or cross-Space relationship automatically.
+
+## 14. CP6 Implemented Provenance Slice
+
+CP6 implements bounded inbound/outbound/bidirectional traversal over the shared canonical entity/relationship graph, Checkpoint-source graph entry, origin/review/status/confidence/time filters, transparent truncation/frontier/omission metadata, optimistic relationship review and immutable history, acyclic supersession validation, deterministic graph gap/integrity diagnostics, and typed Learning Feedback. Learning Feedback cites actual validation sources, may target research or development knowledge, and never changes target status automatically. Honest Research-only and Development-only partial graphs remain valid.

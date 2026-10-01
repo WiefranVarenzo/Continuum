@@ -1,0 +1,6 @@
+{"jsonrpc":"2.0","id":100,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"Gemini CLI","version":"2026.09"}}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":101,"method":"resources/list","params":{"cursor":null}}
+{"jsonrpc":"2.0","id":102,"method":"tools/list","params":{"cursor":null}}
+{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":"not-started","reason":"fixture cancellation"}}
+{"jsonrpc":"2.0","id":103,"method":"tools/call","params":{"name":"continuum.project.get_state","arguments":{"scope":"core"}}}

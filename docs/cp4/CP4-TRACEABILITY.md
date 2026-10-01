@@ -47,6 +47,7 @@
 - rename preservation → NUL-delimited parser unit test and real `git mv` fixture;
 - closed relationship matrix → Development relationship-policy unit test;
 - bounded resources → process timeout/output, commit/path/member/text/JSON/checkpoint/report limits;
+- ADR-007 compatibility → the deterministic Development report remains the CP4 content baseline; CP8 owns Human Document composition, safe HTML rendering/export, diagrams, accessibility, and renderer parity.
 - repairability → Development-aware integrity diagnostics.
 
 ## Verification Files

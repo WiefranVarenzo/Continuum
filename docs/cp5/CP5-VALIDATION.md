@@ -1,8 +1,8 @@
 # CP5 — Validation and Exit Decision
 
-> **Decision:** PASS
+> **Decision:** CP5.1 PASS
 >
-> **Validated:** 2026-09-04
+> **Validated:** 2026-09-08
 >
 > **Reference machine:** AMD Ryzen 5 5600H, approximately 16 GB RAM, Linux x86_64
 
@@ -12,16 +12,16 @@ CP5 was checked against CP1 Architecture, Domain Model, Data Architecture, Space
 
 ## Automated Evidence
 
-- `cargo test --workspace --locked`: PASS, 71 tests, 0 failures on the Linux reference machine.
-- unit and migration tests: 14 PASS.
-- CP2 regression suite: 17 PASS.
+- `cargo test --workspace --all-targets --locked`: PASS, 78 tests, 0 failures on the Linux reference machine.
+- unit and migration tests: 15 PASS.
+- CP2 regression suite: 18 PASS.
 - CP3 regression suite: 15 PASS.
 - CP4 regression suite: 12 PASS.
-- CP5 integration/acceptance suite: 13 PASS on Linux (including the Unix Git-symlink safety fixture).
+- CP5 integration/acceptance suite: 18 PASS on Linux (including historical projection; rename, copy, same-commit path reuse; archive; and Unix Git-symlink safety fixtures).
 - `cargo fmt --all --check`: PASS.
 - `cargo clippy --workspace --all-targets --locked -- -D warnings`: PASS.
 - SQLite integrity/foreign-key checks: PASS on valid fixtures.
-- v1→v5, v2→v5, v3→v5, and v4→v5 pre-migration backup: PASS.
+- v1→v6, v2→v6, v3→v6, v4→v6, and populated v5→v6 pre-migration backup/migration: PASS.
 - CP5 export/import restoration: PASS.
 
 ## Failure and Abuse Cases Covered
@@ -34,10 +34,13 @@ CP5 was checked against CP1 Architecture, Domain Model, Data Architecture, Space
 - malformed Git batch framing/object identity/size and bounded output/deadline;
 - repository-local executable Git configuration inherited from CP4 checks;
 - duplicate analysis retry and unchanged-content reuse;
-- cached parser-recovery limitation preservation and old-baseline projection reapplication;
+- cached parser-recovery limitation preservation and proof that old-baseline analysis cannot rewind current projection;
 - source-shaped Git symlink target data;
 - ChangeSet creation both before and after analysis, including deleted-path alias linkage;
-- committed file rename, deletion, and reappearance;
+- committed file rename, ordinary copy, deletion, byte-identical reappearance, different-file reuse of a retired path, and rename plus immediate old-path reuse in one commit;
+- mismatched artifact idempotency retry without orphan content or staging residue;
+- archived-project rejection for Code Intelligence writes;
+- bounded analyzer-cache metadata/eviction contract and atomic project/export staging;
 - dotenv and credential-shaped dependency data;
 - TestRun aggregate/result inconsistency, duplicate Test result, and excessive result count;
 - invalid Test verification target;
@@ -70,6 +73,6 @@ This result proves the declared CP5 fixture on the reference machine. CP12 retai
 
 ## Final Decision
 
-**CP5 PASS — Code Intelligence is complete for its declared deterministic scope and provides stable CodeEntity/Test/TestRun coordinates to CP6 Provenance & Knowledge Graph.**
+**CP5.1 PASS — Code Intelligence is hardened for its declared deterministic scope and provides stable, history-safe CodeEntity/Test/TestRun coordinates to CP6 Provenance & Knowledge Graph.**
 
-This decision does not pre-approve CP6–CP12. Full provenance traversal/gap validation, semantic AI, styled reports, capture, semantic Context Packs, MCP access, and release certification remain with their owning checkpoints.
+This decision does not pre-approve CP6–CP12. Full provenance traversal/gap validation, semantic AI, HTML-first Human Documentation/styled reports, capture, semantic Context Packs, MCP access, and release certification remain with their owning checkpoints. ADR-007 preserves the validated report as compatibility evidence and introduces no CP5 analyzer, canonical, or schema change.

@@ -1,6 +1,6 @@
 # CP1 Decision Register
 
-> **Status:** Locked for CP2; amended by ADR-006 on 2026-09-03
+> **Status:** Locked for CP2; amended by ADR-006 on 2026-09-03, ADR-007 on 2026-09-04, and ADR-008 on 2026-09-09
 > **Rule:** `Deferred` means intentionally assigned to a later owning checkpoint and not required to implement CP2.
 
 ## Accepted Decisions
@@ -19,11 +19,11 @@
 - D-012: default classification is internal/project-private; derived data inherits most restrictive source.
 - D-013: internal AI requests require project consent; sensitive requires per-request preview; secret/never-send is denied.
 - D-014: AI claims require resolvable source IDs; no numeric score creates canonical truth. See ADR-004.
-- D-015: Markdown and HTML are first report formats; PDF is deferred to reporting implementation if validated.
+- D-015: HTML is the primary Human Documentation experience in-product and the default portable human export; Markdown remains a semantic-parity compatibility/portable-text renderer, while PDF is deferred until validated. See ADR-007.
 - D-016: Checkpoints are immutable, non-terminal, and scope-aware. See ADR-005.
 - D-017: Context Pack default external budget is 16k soft / 32k hard tokens with explicit omission metadata.
 - D-018: Checkpoints retained; AI cache bounded LRU/30 days; sanitized AI audit metadata 90 days; Context Packs ephemeral unless saved.
-- D-019: React Flow + ELK render scoped graphs.
+- D-019: Mermaid renders bounded portable diagrams; React Flow + ELK render interactive knowledge graphs and complex traceability views. Both consume validated application-owned schemas. See ADR-007.
 - D-020: CP11 baseline is a Continuum MCP Server over local stdio, read-first, project/capability-scoped, and proposal-based for consequential writes. Streamable HTTP is separately gated. See ADR-006.
 - D-021: performance reference is Ryzen 5 5600H / 16 GB / SSD; target correctness and budgets are defined in Performance Budget.
 - D-022: context-resumption pilot target is ≥80% correct active goal/constraints/source IDs.
@@ -32,12 +32,14 @@
 - D-030: Provider routing is deterministic and project-allowlisted; sensitive requests cannot silently fail over and secret/never-send has no remote route. See ADR-006.
 - D-031: CP7 proves at least Gemini plus one non-Gemini provider path; supporting every named provider is not an MVP requirement.
 - D-032: CP11 targets compatibility fixtures for Codex, Claude Code, and Gemini CLI against one negotiated MCP contract; client-specific configuration never enters domain logic.
+- D-033: A versioned renderer-neutral Human Document Model separates deterministic source composition from HTML, Markdown, and future PDF renderers. Saved HTML is a derived GeneratedArtifact, never canonical project truth. See ADR-007.
+- D-034: Human reports use progressive disclosure and safe offline HTML export with no required network runtime; AI may propose schema-bound content but cannot supply executable presentation code. See ADR-007.
+- D-024: CP9 capture uses a replaceable application port with OS/WebView-mediated explicit permission, capability detection, persistent indication, bounded media fragments, and fail-closed source support. Release OS/device/codec certification remains CP12. See ADR-008.
+- D-025: OCR and transcription are off by default; when enabled later, outputs are derived Artifacts and never replace original capture. See ADR-008.
 
 ## Deferred Non-Blocking Decisions
 
 - D-023 (CP7): exact supported provider/model profiles, regional endpoints, quota/rate limits, retention/training references, cost metadata, and routing defaults, selected against then-current availability and CP7 conformance evidence.
-- D-024 (CP9): final Windows capture implementation and codec/backend after capability spike; architecture baseline is OS-native screen/WASAPI-class adapters with segmented media.
-- D-025 (CP9/after MVP): transcription and OCR are off by default and not required for MVP.
 - D-026 (CP10): embeddings are off by default; local versus remote requires benchmark/privacy ADR if introduced.
 - D-027 (CP11): exact MCP resource/prompt/tool catalog, grant/authentication handshake, protocol support matrix, and any Streamable HTTP deployment, constrained by the read-first/project-scoped ADR-006 contract.
 

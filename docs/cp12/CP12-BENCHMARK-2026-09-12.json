@@ -1,0 +1,26 @@
+{
+  "arch": "x86_64",
+  "backup_bytes": 10387456,
+  "build": "0.12.0",
+  "checkpoint": "CP12",
+  "correctness": "both Spaces enabled, all projections offline, 30 healthy integrity scans, verified backup, export, identity-preserving restore, and healthy restored project",
+  "cpu": "AMD Ryzen 5 5600H with Radeon Graphics",
+  "fixture": {
+    "entities": 1000,
+    "name": "cp12-integrated-1000-v1",
+    "relationships": 2000,
+    "spaces": ["research", "development"]
+  },
+  "memory": "15745616 kB",
+  "memory_high_water_kib": {"after": 16672, "before": 16556, "delta": 116},
+  "milliseconds": {
+    "compose_and_render": {"max": 1757.550975, "p50": 1714.001341, "p95": 1755.496331},
+    "database_backup": 253.812907,
+    "full_integrity_diagnostics": {"max": 241.10759, "p50": 231.02729, "p95": 240.187325},
+    "verified_project_export": 484.161869,
+    "verified_project_restore": 235.041957
+  },
+  "os": "linux",
+  "protocol": {"network_included": false, "release_build": true, "samples": 30, "warmups": 3},
+  "targets_ms": {"compose_and_render_p95": 5000, "diagnostics_p95": 5000}
+}

@@ -8,6 +8,10 @@ pub enum CoreError {
     NotFound(String),
     #[error("conflict: {0}")]
     Conflict(String),
+    #[error("unauthorized: {0}")]
+    Unauthorized(String),
+    #[error("rate limited: {0}")]
+    RateLimited(String),
     #[error("unsupported schema version {found}; maximum supported is {supported}")]
     UnsupportedSchema { found: u32, supported: u32 },
     #[error("migration checksum mismatch for version {version}")]

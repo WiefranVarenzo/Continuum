@@ -1,6 +1,6 @@
 # CP1 Architecture Master Document
 
-> **Status:** Approved baseline; provider-neutral amendment accepted 2026-09-03; implemented through CP5
+> **Status:** Approved baseline; provider-neutral amendment accepted 2026-09-03; implemented through CP11
 > **Authority:** [Continuum PRD](../../CONTINUUM_PRD.md)  
 > **Decision baseline:** [CP1 Decision Register](../cp1/CP1-DECISION-REGISTER.md)
 
@@ -19,6 +19,7 @@ Continuum is a local-first desktop system that preserves resumable research and 
 - code analysis: Tree-sitter, ast-grep, and format-specific adapters.
 - semantic providers: replaceable adapters behind an application-owned AI Provider Gateway; Gemini remains first-class, with OpenAI, Anthropic, and selected OpenAI-compatible services supported by capability-tested profiles.
 - graph UI: React Flow with ELK layout.
+- Human Documentation: safe semantic HTML in the React desktop UI, offline HTML export, Markdown compatibility, and Mermaid for bounded portable diagrams.
 - local external-AI protocol in CP11: Continuum MCP Server over stdio, read-first with project-scoped proposal-based writes; Streamable HTTP is separately gated.
 - first release target: Windows 11; Linux follows through platform adapters. Core architecture remains cross-platform.
 
@@ -62,11 +63,15 @@ Owns no duplicate business entities. It validates typed cross-Space links, suppo
 
 AI providers, capture, graph/reporting, Git, parser/analyzer, import/export, and MCP adapters depend on application ports. They cannot bypass domain validation, privacy policy, authorization, provenance, review, or transaction boundaries. Outbound model invocation and inbound MCP access are separate ports.
 
+Human Documentation follows the same rule. A versioned renderer-neutral Human Document Model is composed from scoped application queries. HTML, Markdown, diagram layouts, and render caches are derived projections; saved reports are GeneratedArtifacts and never canonical project truth. See [Human Documentation Architecture](HUMAN-DOCUMENTATION-ARCHITECTURE.md) and [ADR-007](../adr/ADR-007-HTML-FIRST-HUMAN-DOCUMENTATION.md).
+
+Research Capture follows the capture application port. The domain owns permission observations, lifecycle, bounded fragments, markers, Evidence links, recovery, and derivation provenance; an OS/WebView-mediated adapter owns temporary sensor streams. Runtime capability detection fails closed, and no sensor starts without an explicit user action and persistent indicator. See [ADR-008](../adr/ADR-008-OS-MEDIATED-SEGMENTED-CAPTURE.md).
+
 ## 5. Component Responsibilities
 
 ### Desktop UI
 
-Renders scope-aware navigation, forms, timelines, graphs, job progress, provenance, checkpoint resume, privacy previews, and AI review. It holds no canonical authority.
+Renders scope-aware navigation, forms, timelines, graphs, job progress, provenance, checkpoint resume, privacy previews, AI review, and concise HTML-first Human Documentation. It holds no canonical authority.
 
 ### Application layer
 

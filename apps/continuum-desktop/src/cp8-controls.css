@@ -1,0 +1,36 @@
+.graph-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.graph-actions button,
+.preview-badge {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink);
+  padding: 0.45rem 0.75rem;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.graph-actions button:not(:disabled) {
+  cursor: pointer;
+}
+
+.graph-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.preview-badge {
+  color: var(--muted);
+}
+
+@media (max-width: 640px) {
+  .graph-actions {
+    width: 100%;
+  }
+}

@@ -72,4 +72,4 @@ The CP2 50,000-entity/150,000-relationship fixture remains the scale regression.
 
 **CP4 PASS — Development Core is complete for its declared deterministic scope and provides exact repository coordinates to CP5 Code Intelligence.**
 
-This decision does not pre-approve CP5–CP12 behavior. Code structure, dependency/configuration analysis, Tests/TestRuns, full provenance traversal, AI explanation, visual reporting, semantic context, MCP, and release certification remain with their owning checkpoints.
+This decision does not pre-approve CP5–CP12 behavior. Code structure, dependency/configuration analysis, Tests/TestRuns, full provenance traversal, AI explanation, HTML-first Human Documentation/visual reporting, semantic context, MCP, and release certification remain with their owning checkpoints. ADR-007 preserves the validated deterministic report as compatibility evidence and introduces no CP4 canonical or schema change.

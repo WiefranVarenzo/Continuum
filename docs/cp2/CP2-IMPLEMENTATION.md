@@ -26,7 +26,9 @@ CP2 converts the CP1 system contracts into a deterministic Rust library and proj
 
 - Research Question, Evidence, Experiment, Result, Finding, Decision, and Requirement aggregates (CP3).
 - Git ingestion, ChangeSets, and repository baseline behavior (CP4).
-- Code intelligence (CP5), cross-Space knowledge graph behavior (CP6), provider-neutral AI (CP7), visual reports (CP8), capture (CP9), semantic Context Pack selection (CP10), Continuum MCP Server/external AI clients (CP11), and release hardening (CP12).
+- Code intelligence (CP5), cross-Space knowledge graph behavior (CP6), provider-neutral AI (CP7), HTML-first Human Documentation and visual reports (CP8), capture (CP9), semantic Context Pack selection (CP10), Continuum MCP Server/external AI clients (CP11), and release hardening (CP12).
+
+ADR-007 is additive to CP2. The existing canonical entity, relationship, Artifact Store, GeneratedArtifact envelope, checkpoint source, export, and integrity contracts provide the required foundation. CP2 does not render HTML and requires no presentation-only schema migration; CP8 owns the versioned Human Document Model and renderer metadata it proves necessary.
 
 ## Project layout
 

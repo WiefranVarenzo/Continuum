@@ -1,6 +1,6 @@
 # Continuum Spaces and R&D Bridge
 
-> **Status:** Approved baseline; Research Space implemented through CP3; Development Space implemented through CP5
+> **Status:** Approved baseline; Research Space and capture implemented through CP9; Development Space implemented through CP5.1; optional R&D Bridge implemented through CP6; shared Checkpoint and Context Engine implemented through CP10; permissioned cross-client continuity implemented through CP11
 > **Governing decision:** [ADR-001](../adr/ADR-001-MODULAR-SPACES-AND-OPTIONAL-RD-BRIDGE.md)
 
 ## 1. Capability Model
@@ -20,15 +20,17 @@ Disabling a Space hides active UI/routes and stops new Space-specific jobs; it d
 
 ## 2. Research Space Contract
 
-Inputs include questions, notes, captured/imported sources, research plans, observations, and user/AI proposals. Outputs include Evidence, Results, Findings, Decisions, research reports, Research Checkpoints, and Research Context Packs.
+Inputs include questions, notes, captured/imported sources, research plans, observations, and user/AI proposals. Outputs include Evidence, Results, Findings, Decisions, HTML-first Research Reports with Markdown compatibility, Research Checkpoints, and Research Context Packs.
 
 Valid outcomes do not require development. A Finding may remain unresolved; a Decision may produce no Requirement; a Research Checkpoint may be created mid-investigation.
 
 Research Space depends only on Continuity Core ports for identity, persistence, artifacts, provenance, policy, jobs, checkpoints, and context.
 
+CP9 extends Research Space with optional explicit-consent capture sessions, bounded media fragments, screenshots, files, web/browser sources, and timestamped markers. These become typed Evidence and may attach to an active Research Session. Capture remains entirely absent from Development-only operation unless Research Space is enabled.
+
 ## 3. Development Space Contract
 
-Inputs include repository state and manual/imported/external/legacy intent such as a Requirement, issue, brief, task, or Decision. Outputs include ChangeSets, CodeEntities, dependency/configuration observations, Tests, TestRuns, validation, development documentation, Development Checkpoints, and Development Context Packs.
+Inputs include repository state and manual/imported/external/legacy intent such as a Requirement, issue, brief, task, or Decision. Outputs include ChangeSets, CodeEntities, dependency/configuration observations, Tests, TestRuns, validation, HTML-first Development Documentation with Markdown compatibility, Development Checkpoints, and Development Context Packs.
 
 Development Space never claims evidence-backed rationale unless linked sources exist. Unknown rationale remains explicit. Repository observation is read-only by default; Continuum does not rewrite Git history.
 

@@ -7,7 +7,7 @@ use continuum_core::{
     CoreError, DevelopmentCheckpointInput, DevelopmentIntentOrigin, DevelopmentSearchQuery,
     DevelopmentTimelineFilter, LinkTestVerificationInput, NewChangeSet, NewDevelopmentRequirement,
     NewEntity, NewTestRun, OriginKind, PageRequest, RepositoryAttachInput,
-    RequirementRationaleOrigin, Space, TestOutcome, TestResultInput, TestRunSource,
+    RequirementRationaleOrigin, Space, TestOutcome, TestResultInput, TestRunSource, new_id,
 };
 use rusqlite::OptionalExtension;
 use serde_json::{Value, json};
@@ -166,7 +166,7 @@ fn file_id(store: &ContinuityStore, repository_id: &str, path: &str) -> String {
             "SELECT cea.code_entity_id FROM code_entity_aliases cea
              JOIN code_entities ce ON ce.entity_id=cea.code_entity_id
              WHERE cea.repository_id=?1 AND cea.alias_kind='path' AND cea.alias_value=?2
-               AND ce.entity_kind='file'",
+               AND cea.retired_at_baseline_id IS NULL AND ce.entity_kind='file'",
             [repository_id, path],
             |row| row.get(0),
         )
@@ -1044,4 +1044,252 @@ fn analysis_queries_remain_project_scoped() {
         .optional()
         .unwrap();
     assert!(leaked.is_none());
+}
+
+#[test]
+fn historical_reanalysis_never_rewinds_current_projection() {
+    let repository_directory = tempfile::tempdir().unwrap();
+    let root = init_repository(&repository_directory);
+    let project_directory = tempfile::tempdir().unwrap();
+    let store = development_project(&project_directory);
+    let (repository, first_baseline) = attach_observe(&store, &root);
+    analyze(&store, &repository.entity.id, &first_baseline.entity.id);
+    let old_symbol = entity_id_by_title(&store, "code_entity", "Engine");
+
+    fs::write(
+        root.join("src/lib.rs"),
+        "pub struct CurrentEngine;\nimpl CurrentEngine { pub fn run(&self) -> bool { true } }\n",
+    )
+    .unwrap();
+    run_git(&root, &["add", "--", "src/lib.rs"]);
+    run_git(&root, &["commit", "-m", "Replace current engine symbol"]);
+    let current_baseline = store
+        .observe_repository_baseline(&user_command(), &repository.entity.id)
+        .unwrap();
+    analyze(&store, &repository.entity.id, &current_baseline.entity.id);
+    let current_symbol = entity_id_by_title(&store, "code_entity", "CurrentEngine");
+    let old_before = store.get_entity(&old_symbol).unwrap();
+    let current_before = store.get_entity(&current_symbol).unwrap();
+    assert_eq!(old_before.status, "unavailable");
+    assert_eq!(current_before.status, "active");
+
+    analyze(&store, &repository.entity.id, &first_baseline.entity.id);
+    let old_after = store.get_entity(&old_symbol).unwrap();
+    let current_after = store.get_entity(&current_symbol).unwrap();
+    assert_eq!(old_after.status, "unavailable");
+    assert_eq!(current_after.status, "active");
+    assert_eq!(old_after.version, old_before.version);
+    assert_eq!(current_after.version, current_before.version);
+    assert_eq!(
+        current_after.data["last_observed_baseline_id"],
+        current_baseline.entity.id
+    );
+}
+
+#[test]
+fn renamed_file_keeps_identity_but_reused_old_path_gets_a_new_identity() {
+    let repository_directory = tempfile::tempdir().unwrap();
+    let root = init_repository(&repository_directory);
+    let project_directory = tempfile::tempdir().unwrap();
+    let store = development_project(&project_directory);
+    let (repository, first_baseline) = attach_observe(&store, &root);
+    store
+        .ingest_git_commits(
+            &user_command(),
+            continuum_core::CommitIngestionInput {
+                repository_id: repository.entity.id.clone(),
+                baseline_id: first_baseline.entity.id.clone(),
+                max_commits: 100,
+            },
+        )
+        .unwrap();
+    analyze(&store, &repository.entity.id, &first_baseline.entity.id);
+    let original_id = file_id(&store, &repository.entity.id, "src/lib.rs");
+
+    run_git(&root, &["mv", "src/lib.rs", "src/engine.rs"]);
+    run_git(&root, &["commit", "-m", "Rename engine source"]);
+    let renamed_baseline = store
+        .observe_repository_baseline(&user_command(), &repository.entity.id)
+        .unwrap();
+    store
+        .ingest_git_commits(
+            &user_command(),
+            continuum_core::CommitIngestionInput {
+                repository_id: repository.entity.id.clone(),
+                baseline_id: renamed_baseline.entity.id.clone(),
+                max_commits: 100,
+            },
+        )
+        .unwrap();
+    analyze(&store, &repository.entity.id, &renamed_baseline.entity.id);
+    assert_eq!(
+        file_id(&store, &repository.entity.id, "src/engine.rs"),
+        original_id
+    );
+
+    fs::write(
+        root.join("src/lib.rs"),
+        "pub fn entirely_new_file_at_reused_path() -> u8 { 7 }\n",
+    )
+    .unwrap();
+    run_git(&root, &["add", "--", "src/lib.rs"]);
+    run_git(&root, &["commit", "-m", "Reuse old source path"]);
+    let reused_baseline = store
+        .observe_repository_baseline(&user_command(), &repository.entity.id)
+        .unwrap();
+    store
+        .ingest_git_commits(
+            &user_command(),
+            continuum_core::CommitIngestionInput {
+                repository_id: repository.entity.id.clone(),
+                baseline_id: reused_baseline.entity.id.clone(),
+                max_commits: 100,
+            },
+        )
+        .unwrap();
+    analyze(&store, &repository.entity.id, &reused_baseline.entity.id);
+    let reused_id = file_id(&store, &repository.entity.id, "src/lib.rs");
+    assert_ne!(reused_id, original_id);
+    assert_eq!(
+        file_id(&store, &repository.entity.id, "src/engine.rs"),
+        original_id
+    );
+    let active_old_path_aliases: i64 = store
+        .debug_connection()
+        .unwrap()
+        .query_row(
+            "SELECT count(*) FROM code_entity_aliases
+             WHERE repository_id=?1 AND alias_kind='path' AND alias_value='src/lib.rs'
+               AND retired_at_baseline_id IS NULL",
+            [&repository.entity.id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(active_old_path_aliases, 1);
+}
+
+#[test]
+fn archived_project_rejects_code_intelligence_writes() {
+    let repository_directory = tempfile::tempdir().unwrap();
+    let root = init_repository(&repository_directory);
+    let project_directory = tempfile::tempdir().unwrap();
+    let store = development_project(&project_directory);
+    let (repository, baseline) = attach_observe(&store, &root);
+    store.set_project_archived(&new_id(), true).unwrap();
+    let result = store.analyze_repository_baseline(
+        &user_command(),
+        AnalyzeBaselineInput {
+            repository_id: repository.entity.id,
+            baseline_id: baseline.entity.id,
+            limits: AnalysisLimits::default(),
+        },
+    );
+    assert!(matches!(result, Err(CoreError::Conflict(_))));
+    assert_eq!(store.summary().unwrap().status, "archived");
+}
+
+#[test]
+fn rename_destination_is_resolved_before_same_commit_old_path_reuse() {
+    let repository_directory = tempfile::tempdir().unwrap();
+    let root = init_repository(&repository_directory);
+    let project_directory = tempfile::tempdir().unwrap();
+    let store = development_project(&project_directory);
+    let (repository, first_baseline) = attach_observe(&store, &root);
+    store
+        .ingest_git_commits(
+            &user_command(),
+            continuum_core::CommitIngestionInput {
+                repository_id: repository.entity.id.clone(),
+                baseline_id: first_baseline.entity.id.clone(),
+                max_commits: 100,
+            },
+        )
+        .unwrap();
+    analyze(&store, &repository.entity.id, &first_baseline.entity.id);
+    let original_id = file_id(&store, &repository.entity.id, "src/lib.rs");
+
+    run_git(&root, &["mv", "src/lib.rs", "src/z_engine.rs"]);
+    fs::write(
+        root.join("src/lib.rs"),
+        "pub fn new_file_created_in_same_commit() -> bool { true }\n",
+    )
+    .unwrap();
+    run_git(&root, &["add", "--", "src/lib.rs", "src/z_engine.rs"]);
+    run_git(
+        &root,
+        &["commit", "-m", "Rename and reuse old path atomically"],
+    );
+    let baseline = store
+        .observe_repository_baseline(&user_command(), &repository.entity.id)
+        .unwrap();
+    store
+        .ingest_git_commits(
+            &user_command(),
+            continuum_core::CommitIngestionInput {
+                repository_id: repository.entity.id.clone(),
+                baseline_id: baseline.entity.id.clone(),
+                max_commits: 100,
+            },
+        )
+        .unwrap();
+    analyze(&store, &repository.entity.id, &baseline.entity.id);
+
+    assert_eq!(
+        file_id(&store, &repository.entity.id, "src/z_engine.rs"),
+        original_id
+    );
+    assert_ne!(
+        file_id(&store, &repository.entity.id, "src/lib.rs"),
+        original_id
+    );
+    assert!(store.verify_integrity().unwrap().is_healthy());
+}
+
+#[test]
+fn ordinary_copy_with_unchanged_source_receives_a_distinct_file_identity() {
+    let repository_directory = tempfile::tempdir().unwrap();
+    let root = init_repository(&repository_directory);
+    let project_directory = tempfile::tempdir().unwrap();
+    let store = development_project(&project_directory);
+    let (repository, first_baseline) = attach_observe(&store, &root);
+    store
+        .ingest_git_commits(
+            &user_command(),
+            continuum_core::CommitIngestionInput {
+                repository_id: repository.entity.id.clone(),
+                baseline_id: first_baseline.entity.id.clone(),
+                max_commits: 100,
+            },
+        )
+        .unwrap();
+    analyze(&store, &repository.entity.id, &first_baseline.entity.id);
+    let source_id = file_id(&store, &repository.entity.id, "src/lib.rs");
+
+    fs::copy(root.join("src/lib.rs"), root.join("src/copied.rs")).unwrap();
+    run_git(&root, &["add", "--", "src/copied.rs"]);
+    run_git(&root, &["commit", "-m", "Copy source without moving it"]);
+    let baseline = store
+        .observe_repository_baseline(&user_command(), &repository.entity.id)
+        .unwrap();
+    store
+        .ingest_git_commits(
+            &user_command(),
+            continuum_core::CommitIngestionInput {
+                repository_id: repository.entity.id.clone(),
+                baseline_id: baseline.entity.id.clone(),
+                max_commits: 100,
+            },
+        )
+        .unwrap();
+    analyze(&store, &repository.entity.id, &baseline.entity.id);
+
+    assert_ne!(
+        file_id(&store, &repository.entity.id, "src/copied.rs"),
+        source_id
+    );
+    assert_eq!(
+        file_id(&store, &repository.entity.id, "src/lib.rs"),
+        source_id
+    );
+    assert!(store.verify_integrity().unwrap().is_healthy());
 }

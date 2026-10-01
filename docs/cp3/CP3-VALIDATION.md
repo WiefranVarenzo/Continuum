@@ -67,4 +67,4 @@ The existing CP2 fixture of 50,000 entities and 150,000 relationships remains th
 
 **CP3 PASS — Research Core is complete for its declared deterministic scope and is ready to provide optional research rationale to CP4 Development Core.**
 
-This decision does not pre-approve CP4–CP12 behavior. AI proposals, Git ingestion, capture acquisition, semantic Context Packs, styled visual reporting, and release certification retain their existing checkpoint ownership.
+This decision does not pre-approve CP4–CP12 behavior. AI proposals, Git ingestion, capture acquisition, semantic Context Packs, HTML-first Human Documentation/styled visual reporting, and release certification retain their existing checkpoint ownership. ADR-007 preserves this validated Markdown report as compatibility evidence and introduces no CP3 canonical or schema change.

@@ -1,8 +1,8 @@
 # CP1 — Architecture, Domain Model & System Contracts
 
-> **Status:** PASS — Ready for CP2; provider/MCP amendment accepted 2026-09-03
+> **Status:** PASS — Ready for CP2; provider/MCP amendment accepted 2026-09-03; HTML-first Human Documentation amendment accepted 2026-09-04
 > **PRD:** [Continuum PRD](../../CONTINUUM_PRD.md)  
-> **Current architecture decisions:** [ADR-001 — Modular Spaces and Optional R&D Bridge](../adr/ADR-001-MODULAR-SPACES-AND-OPTIONAL-RD-BRIDGE.md); [ADR-006 — Provider-Neutral AI and MCP Boundaries](../adr/ADR-006-PROVIDER-NEUTRAL-AI-AND-MCP-BOUNDARIES.md)
+> **Current architecture decisions:** [ADR-001 — Modular Spaces and Optional R&D Bridge](../adr/ADR-001-MODULAR-SPACES-AND-OPTIONAL-RD-BRIDGE.md); [ADR-006 — Provider-Neutral AI and MCP Boundaries](../adr/ADR-006-PROVIDER-NEUTRAL-AI-AND-MCP-BOUNDARIES.md); [ADR-007 — HTML-First Human Documentation](../adr/ADR-007-HTML-FIRST-HUMAN-DOCUMENTATION.md)
 > **Purpose:** Produce an implementation-ready architectural blueprint for CP2 without over-specifying later checkpoints.
 
 ## 1. CP1 Outcome
@@ -27,6 +27,8 @@ CP1 designs the system. It does not implement the production database, desktop r
 - Replaceable AI providers provide bounded semantic assistance through reviewable structured outputs; Gemini remains first-class but is not a domain dependency.
 - The outbound AI Provider Gateway and inbound Continuum MCP Server are separate, policy-enforced application adapters.
 - The complete research-to-code chain is optional and composable, never fabricated.
+- HTML is the primary Human Documentation experience; Markdown is a compatibility/portable-text projection, and neither is canonical runtime truth.
+- Mermaid owns bounded portable diagrams while React Flow + ELK own interactive knowledge graphs and complex traceability views.
 - The product must remain practical on Ryzen 5 5600H / 16 GB RAM.
 - Delivery remains organized as CP1 through CP12 in the approved order.
 
@@ -39,6 +41,8 @@ CP1 designs the system. It does not implement the production database, desktop r
 - `CP1-README.md` — CP1 scope, artifact index, dependency order, and status.
 
 ### Required before CP1 closure
+
+- [Human Documentation Architecture](../architecture/HUMAN-DOCUMENTATION-ARCHITECTURE.md) — renderer-neutral Human Document Model, HTML-first experience, offline export, diagram selection, security, accessibility, compatibility, and verification.
 
 - `docs/architecture/CP1-ARCHITECTURE.md` — system context, components, boundaries, runtime view, deployment, failure domains, and architectural contracts.
 - `docs/domain/DOMAIN-MODEL.md` — ontology, entity ownership, relationships, lifecycle, provenance, and authorship.
@@ -58,7 +62,7 @@ CP1 designs the system. It does not implement the production database, desktop r
 
 ### ADRs
 
-ADRs are created only for consequential decisions. Accepted ADR-006 generalizes the original Gemini binding into a provider-neutral gateway and separates it from the MCP continuity boundary. Other candidate subjects include code-intelligence adapters, diagram layout, capture backend, remote MCP deployment, and optional embedding strategy. A candidate becomes an ADR only when the decision is evaluated and locked.
+ADRs are created only for consequential decisions. Accepted ADR-006 generalizes the original Gemini binding into a provider-neutral gateway and separates it from the MCP continuity boundary. Accepted ADR-007 makes safe HTML the primary Human Documentation experience while preserving Markdown compatibility and deterministic authority. Other candidate subjects include code-intelligence adapters, capture backend, remote MCP deployment, and optional embedding strategy. A candidate becomes an ADR only when the decision is evaluated and locked.
 
 ## 4. Core Diagram Set
 

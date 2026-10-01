@@ -1,0 +1,173 @@
+.report-deck {
+  max-width: 72ch;
+  font-size: 1.05rem;
+  color: var(--muted);
+}
+
+/* Reading surface: narrative first, with visual detail on demand. */
+.workspace-page .report-header { padding-top:2rem; }
+.workspace-page #main > section { border:0; border-bottom:1px solid var(--line); border-radius:0; box-shadow:none; padding:2rem 0; background:transparent; }
+.workspace-page #main { max-width:1000px; }
+.workspace-page #main p { max-width:78ch; }
+.workspace-page #main .section-heading .badge { font-size:.66rem; opacity:.8; }
+.workspace-page #main .research-synthesis p, .workspace-page #main .research-synthesis li { line-height:1.8; white-space:pre-line; }
+.mermaid-shell .mermaid-viewport { height:460px; max-height:65vh; padding:16px; cursor:grab; touch-action:none; }
+.mermaid-shell .mermaid-viewport:active { cursor:grabbing; }
+.mermaid-shell .mermaid-canvas { display:block; min-width:0; overflow:visible; margin:0; }
+.mermaid-shell .mermaid-canvas svg { width:100%; height:100%; min-width:0; max-width:none; }
+.mermaid-shell:fullscreen { padding:1rem; background:var(--bg); overflow:auto; }
+.mermaid-shell:fullscreen .mermaid-viewport { height:80vh; max-height:80vh; }
+.graph-evidence-preview { width:58px; height:38px; object-fit:cover; float:right; border-radius:5px; }
+.graph-node-card { padding:0; font-size:.82rem; }
+.graph-node-card small { color:inherit; }
+.proposal-readable { padding:1rem; border:1px solid var(--line); border-radius:12px; background:var(--bg); }
+.proposal-readable p { white-space:pre-line; line-height:1.7; }
+.proposal-readable h4 { margin:1rem 0 .4rem; }
+.proposal-draft-label { color:var(--muted); font-size:.8rem; }
+.analysis-progress { padding:1rem 1.4rem; margin:1rem; border-left:4px solid var(--brand); background:var(--brand-soft); border-radius:10px; }
+.analysis-progress p { margin:.4rem 0 0; }
+.diagram-actions select { max-width:120px; padding:.45rem; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--ink); }
+
+.report-integrity {
+  max-width: 72ch;
+  color: var(--muted);
+  font-size: .82rem;
+}
+
+.report-toc {
+  position: sticky;
+  top: 68px;
+  z-index: 3;
+  padding: .85rem 1rem;
+  margin: 0 0 1rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--shadow);
+}
+
+.report-toc > strong {
+  display: block;
+  margin-bottom: .45rem;
+  color: var(--brand);
+  font-size: .78rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.report-toc > div {
+  display: flex;
+  gap: .45rem;
+  overflow: auto;
+  padding-bottom: .15rem;
+}
+
+.report-toc a {
+  flex: 0 0 auto;
+  padding: .35rem .65rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: .76rem;
+  text-decoration: none;
+}
+
+.report-toc a:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.report-scope {
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--warn);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.source-links {
+  color: var(--muted);
+  font-size: .78rem;
+}
+
+.source-links p {
+  overflow-wrap: anywhere;
+}
+
+.workspace-page .table-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+}
+
+.workspace-page .table-wrap:focus-visible {
+  outline: 3px solid #0b6cff;
+  outline-offset: 3px;
+}
+
+.workspace-page .table-wrap table {
+  width: max-content;
+  min-width: 78rem;
+  table-layout: auto;
+}
+
+.workspace-page .table-wrap th,
+.workspace-page .table-wrap td {
+  max-width: none;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.workspace-page [data-column="title"] {
+  min-width: 14rem;
+  max-width: 19rem;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+.workspace-page [data-column="status"] { min-width: 8rem; white-space: nowrap; }
+.workspace-page [data-column="origin"] { min-width: 9rem; white-space: nowrap; }
+.workspace-page [data-column="updated"] { min-width: 15rem; white-space: nowrap; }
+.workspace-page [data-column="classification"] { min-width: 8rem; white-space: nowrap; }
+
+.workspace-page [data-column="detail"] {
+  min-width: 28rem;
+  max-width: 38rem;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+.research-synthesis .lead { max-width: 76ch; }
+.synthesis-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 1rem; }
+.synthesis-grid > div { border: 1px solid var(--line); border-radius: 12px; padding: 1rem; }
+.synthesis-grid h3 { margin-top: 0; }
+
+.workspace-page .table-wrap tr > :first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--panel);
+  box-shadow: 1px 0 0 var(--line);
+}
+
+.workspace-page .table-wrap thead th {
+  z-index: 2;
+}
+
+.workspace-page .table-wrap thead th:first-child {
+  z-index: 3;
+}
+
+@media (max-width: 640px) {
+  .report-toc { position: static; }
+  .report-toc > div { flex-wrap: nowrap; }
+  .workspace-page .table-wrap table { min-width: 70rem; }
+  .workspace-page [data-column="detail"] { min-width: 24rem; }
+}

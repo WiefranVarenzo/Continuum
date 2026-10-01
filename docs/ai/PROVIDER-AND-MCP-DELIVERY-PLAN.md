@@ -1,6 +1,6 @@
 # Provider and MCP Delivery Plan
 
-> **Status:** Approved roadmap amendment
+> **Status:** Implemented through CP11; CP12 release qualification remains
 >
 > **Date:** 2026-09-03
 > **Authority:** PRD, ADR-004, and ADR-006.
@@ -50,37 +50,47 @@ Continuum remains a local-first deterministic R&D continuity system. It becomes 
 - preserve origin and review state for user, deterministic, imported, AI-provider, and external-MCP proposals;
 - provide bounded graph queries suitable for provider source selection and MCP traversal.
 
-### CP7 — Provider-Neutral Semantic Intelligence
+### CP7 — Provider-Neutral Semantic Intelligence (PASS 2026-09-08)
 
-- implement semantic task/result contracts, AI Privacy Gateway, provider registry, capability descriptors, deterministic router, and review queue;
-- implement Gemini native and at least one independently configured non-Gemini provider path;
-- implement OpenAI-compatible profiles for selected services without assuming feature parity;
-- normalize errors, usage, provenance, schema, grounding, streaming, cancellation, and cache behavior;
-- run the same golden conformance fixtures against every enabled profile.
+- implemented semantic task/result contracts, AI Privacy Gateway, provider registry, capability descriptors, deterministic router, and review queue;
+- implemented Gemini native and an independently configured OpenAI-compatible provider path;
+- supports explicitly registered OpenAI-compatible profiles without assuming feature parity;
+- normalizes errors, usage, provenance, schema, grounding, cancellation, and bounded cache behavior; streaming remains a declared per-profile capability and is not assumed by the core;
+- offline golden fixtures and adversarial acceptance tests pass; every real enabled profile must still pass the provider onboarding gate below before it is advertised as live-supported.
 
-### CP8 — Visual Intelligence & Reports
+### CP8 — Visual Intelligence & Reports (PASS 2026-09-08)
 
 - consume provider-neutral semantic candidates only;
 - generated artifacts record the exact provider/model/adapter attempt or deterministic-only origin;
-- renderers remain deterministic regardless of provider.
+- introduce the versioned renderer-neutral Human Document Model;
+- make safe semantic HTML the primary in-product and portable Human Documentation experience;
+- retain Markdown as a material-fact/citation compatibility renderer;
+- use Mermaid for bounded portable diagrams and React Flow + ELK for interactive knowledge graphs;
+- package offline reports without a required CDN, remote font, remote script, or Continuum server;
+- renderers, URL policy, escaping, component selection, layout constraints, privacy, citations, and freshness remain deterministic regardless of provider.
 
-### CP9 — Research Capture System
+### CP9 — Research Capture System (PASS 2026-09-09)
 
 - capture remains provider-independent;
+- explicit-consent OS/WebView acquisition, bounded fragments, recovery, markers, and typed Evidence are implemented without provider calls;
 - optional transcription/OCR, if activated later, uses the same provider registry, privacy, capability, and provenance policies or an explicitly local adapter.
 
-### CP10 — Checkpoint & Context Engine
+### CP10 — Checkpoint & Context Engine (PASS 2026-09-09)
 
 - produce provider-neutral Context Packs;
 - declare token-estimate method and uncertainty because tokenizers differ;
 - retain deterministic source selection and privacy filtering before any CP7 call or CP11 disclosure.
+- keep Context Packs renderer-neutral and omit HTML/CSS/JavaScript presentation markup unless an explicitly requested report artifact is itself the task source.
+- validated deterministic source ordering, audience/secret filtering, preview/removal, declared estimator uncertainty, and immutable saved-pack provenance without invoking a provider;
+- embeddings remain off because the reference-hardware benchmark meets the target with substantial headroom.
 
-### CP11 — AI Continuity Interface
+### CP11 — AI Continuity Interface (PASS 2026-09-10)
 
-- implement Continuum as an MCP server, stdio first;
-- publish versioned resources, prompts, tools, scopes, pagination, errors, audit, and proposal flow;
-- validate the supported workflow with Codex, Claude Code, and Gemini CLI client profiles;
-- gate Streamable HTTP behind its own security and deployment acceptance.
+- implemented Continuum as a first-party local STDIO MCP server;
+- froze v1 resources, prompts, tools, scopes, pagination, structured errors, sanitized audit, and immutable proposal flow;
+- validated protocol fixtures for Codex, Claude Code, Gemini CLI, and a generic host without client-specific domain forks;
+- added expiring digest-authenticated grants, per-request authorization, revocation, rate/size/privacy budgets, desktop review, migration, integrity, and performance evidence;
+- kept Streamable HTTP disabled pending a separate threat-reviewed ADR and deployment gate.
 
 ### CP12 — Hardening & Release
 

@@ -216,6 +216,70 @@ fn artifact_store_deduplicates_and_detects_corruption_with_guidance() {
 }
 
 #[test]
+fn artifact_retry_rejects_changed_payload_without_orphaning_content() {
+    let (_temp, store) = project();
+    let mut first = CommandContext::new(ActorRef::user("artifact-owner"));
+    first.idempotency_key = "stable-artifact-request".into();
+    let artifact = store
+        .ingest_artifact_reader_with_context(
+            &first,
+            &b"first payload"[..],
+            "text/plain",
+            ArtifactClassification::Internal,
+            OriginKind::User,
+            &json!({"purpose":"regression"}),
+        )
+        .unwrap();
+    store
+        .set_artifact_classification(
+            &CommandContext::new(ActorRef::user("artifact-owner")),
+            &artifact.id,
+            ArtifactClassification::Confidential,
+            "classification changed after original ingestion",
+        )
+        .unwrap();
+
+    let mut same_retry = CommandContext::new(ActorRef::user("artifact-owner"));
+    same_retry.idempotency_key = first.idempotency_key.clone();
+    let same = store
+        .ingest_artifact_reader_with_context(
+            &same_retry,
+            &b"first payload"[..],
+            "text/plain",
+            ArtifactClassification::Internal,
+            OriginKind::User,
+            &json!({"purpose":"regression"}),
+        )
+        .unwrap();
+    assert_eq!(same.id, artifact.id);
+    assert_eq!(same.classification, "confidential");
+
+    let mut retry = CommandContext::new(ActorRef::user("artifact-owner"));
+    retry.idempotency_key = first.idempotency_key;
+    let changed = store.ingest_artifact_reader_with_context(
+        &retry,
+        &b"different payload"[..],
+        "text/plain",
+        ArtifactClassification::Internal,
+        OriginKind::User,
+        &json!({"purpose":"regression"}),
+    );
+    assert!(matches!(changed, Err(CoreError::Conflict(_))));
+
+    let connection = store.debug_connection().unwrap();
+    let artifacts: i64 = connection
+        .query_row("SELECT count(*) FROM artifacts", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(artifacts, 1);
+    assert!(store.root().join(&artifact.relative_path).is_file());
+    assert_eq!(
+        fs::read_dir(store.root().join("staging")).unwrap().count(),
+        0
+    );
+    assert!(store.verify_integrity().unwrap().is_healthy());
+}
+
+#[test]
 fn checkpoints_are_scope_aware_immutable_bookmarks_not_end_states() {
     let (_temp, store) = project();
     store

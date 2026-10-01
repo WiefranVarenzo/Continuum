@@ -1,0 +1,49 @@
+.graph-canvas{background:linear-gradient(135deg,color-mix(in srgb,var(--bg) 92%,#dcefe5 8%),var(--bg))}.react-flow__node{border:2px solid #66736a;background:#eff3f0;color:#27322b;box-shadow:0 8px 24px rgba(20,40,30,.12);font-weight:720}.react-flow__node.tone-research{background:#ddf7ea;border-color:#187a55;color:#123d2d}.react-flow__node.tone-development{background:#e7eeff;border-color:#3f5fc4;color:#1e326f}.react-flow__node.tone-decision{background:#f1e8ff;border-color:#7651b5;color:#3e276b}.react-flow__node.tone-continuity{background:#ddf4fa;border-color:#157a96;color:#174453;border-width:3px}.react-flow__node.tone-feedback{background:#fff2cd;border-color:#a26a00;color:#563b00}.react-flow__node.tone-attention{background:#ffe4e6;border-color:#b83243;color:#6c1722}.react-flow__node.selected{outline:3px solid #0b6cff;outline-offset:3px}.react-flow__edge-path{stroke:#65756a;stroke-width:2}.react-flow__edge-text{fill:var(--ink);font-weight:700}.react-flow__edge-textbg{fill:var(--panel);fill-opacity:.92}.mermaid-shell{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:linear-gradient(135deg,color-mix(in srgb,var(--bg) 92%,#dcefe5 8%),var(--bg))}.diagram-toolbar{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.75rem .85rem;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--panel) 94%,transparent)}.diagram-toolbar>div:first-child{display:grid;text-align:left}.diagram-toolbar span{color:var(--muted);font-size:.72rem}.diagram-actions{display:flex;align-items:center;gap:.35rem}.diagram-actions button{min-width:2rem;border:1px solid var(--line);border-radius:8px;padding:.38rem .55rem;background:var(--panel);color:var(--ink);font:inherit;font-weight:800;cursor:pointer}.diagram-actions output{min-width:3rem;text-align:center;color:var(--muted);font-size:.75rem}.mermaid-viewport{overflow:auto;max-height:70vh;padding:1.2rem;background:color-mix(in srgb,var(--bg) 88%,transparent)}.mermaid-canvas{display:inline-block;min-width:max-content;max-height:none;overflow:visible;text-align:center;transition:transform .15s ease}.mermaid-canvas svg{display:block;max-width:none;min-width:680px;height:auto}.mermaid-canvas .edgeLabel{color:var(--ink)!important}.diagram-legend{display:flex;flex-wrap:wrap;gap:.45rem;padding:.65rem .85rem;border-top:1px solid var(--line);background:color-mix(in srgb,var(--panel) 94%,transparent)}.diagram-legend span{padding:.25rem .52rem;border:1px solid;border-radius:999px;font-size:.68rem;font-weight:800}.diagram-legend .research{background:#ddf7ea;border-color:#187a55;color:#123d2d}.diagram-legend .development{background:#e7eeff;border-color:#3f5fc4;color:#1e326f}.diagram-legend .decision{background:#f1e8ff;border-color:#7651b5;color:#3e276b}.diagram-legend .continuity{background:#ddf4fa;border-color:#157a96;color:#174453}.diagram-legend .feedback{background:#fff2cd;border-color:#a26a00;color:#563b00}@media(max-width:640px){.diagram-toolbar{align-items:flex-start;flex-direction:column}.mermaid-canvas svg{min-width:560px}}@media(prefers-reduced-motion:reduce){.mermaid-canvas{transition:none}}
+
+/* React Flow's default white minimap and controls break the report theme. */
+.react-flow__minimap {
+  background: #f7faf8 !important;
+  border: 1px solid #94a69a;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(20, 40, 30, .12);
+}
+.react-flow__minimap-mask { fill: rgba(23, 107, 82, .14); }
+.react-flow__controls {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  box-shadow: 0 8px 24px rgba(20, 40, 30, .12);
+  overflow: hidden;
+}
+.graph-canvas .react-flow__controls-button {
+  background: #f7faf8 !important;
+  border-bottom-color: var(--line) !important;
+  color: #173d2f !important;
+}
+.graph-canvas .react-flow__controls-button svg,
+.graph-canvas .react-flow__controls-button svg path {
+  fill: currentColor !important;
+  stroke: currentColor !important;
+}
+.graph-canvas .react-flow__controls-button { width:34px; height:34px; }
+.graph-canvas .react-flow__controls-button svg { width:18px; height:18px; }
+.graph-canvas .react-flow__minimap-node { fill:#176b52 !important; stroke:#103b2e !important; stroke-width:2 !important; }
+.graph-canvas .react-flow__minimap-mask { fill:rgba(23,107,82,.12) !important; }
+.graph-canvas .react-flow__controls-button:hover { background: var(--brand-soft) !important; }
+.react-flow__attribution {
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
+  color: var(--muted);
+}
+.graph-node-card { display:flex; flex-direction:column; gap:.28rem; text-align:left; padding:.72rem; }
+.graph-node-card small { font-size:.66rem; text-transform:uppercase; letter-spacing:.06em; opacity:.72; }
+.graph-node-card strong { line-height:1.25; overflow-wrap:anywhere; }
+.graph-intro { display:grid; gap:.18rem; margin-bottom:.85rem; padding:.8rem 1rem; border-left:4px solid var(--brand); background:var(--brand-soft); border-radius:0 12px 12px 0; }
+.graph-intro span { color:var(--muted); font-size:.82rem; }
+
+@media(prefers-color-scheme:dark) {
+  .react-flow__minimap {
+    background: #dff4ea !important;
+    border-color: #79d9b5;
+  }
+  .react-flow__minimap-mask { fill: rgba(23,107,82,.14) !important; }
+  .graph-canvas .react-flow__controls-button { background:#eef6f1 !important; color:#173d2f !important; }
+}

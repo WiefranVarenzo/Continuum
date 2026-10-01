@@ -333,6 +333,7 @@ pub(crate) fn validate_development_relationship_pair(
             | ("test", "verifies", "requirement" | "code_entity")
             | ("test_run", "executes", "test")
             | ("test_run", "observed_at", "repository_baseline")
+            | ("test_run" | "change_set", "produces", "learning_feedback")
     );
     if valid {
         Ok(())
@@ -352,12 +353,12 @@ struct RepositoryInspection {
 }
 
 #[derive(Debug)]
-struct LiveRepositoryState {
-    head_oid: Option<String>,
-    head_ref: Option<String>,
-    branch_name: Option<String>,
-    worktree_fingerprint: String,
-    status: Vec<WorkingTreeEntry>,
+pub(crate) struct LiveRepositoryState {
+    pub(crate) head_oid: Option<String>,
+    pub(crate) head_ref: Option<String>,
+    pub(crate) branch_name: Option<String>,
+    pub(crate) worktree_fingerprint: String,
+    pub(crate) status: Vec<WorkingTreeEntry>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -3310,7 +3311,7 @@ fn validate_repository_local_config(root: &Path) -> Result<()> {
     }
 }
 
-fn inspect_live_state(root: &Path) -> Result<LiveRepositoryState> {
+pub(crate) fn inspect_live_state(root: &Path) -> Result<LiveRepositoryState> {
     validate_repository_local_config(root)?;
     let head_output = run_git(
         root,
@@ -3470,7 +3471,7 @@ fn capture_worktree_identity(root: &Path) -> Result<WorktreeIdentity> {
                 )));
             }
             hasher.update(b"file\0");
-            let mut file = File::open(path)?;
+            let mut file = open_regular_file_nofollow(&path)?;
             let mut buffer = [0_u8; 64 * 1024];
             loop {
                 let read = file.read(&mut buffer)?;
@@ -3600,6 +3601,8 @@ fn read_commit_file_changes(root: &Path, oid: &str) -> Result<Vec<FileChange>> {
             "-r",
             "-z",
             "-M",
+            "-C",
+            "--find-copies-harder",
             "--diff-merges=first-parent",
             "--no-ext-diff",
             "--no-textconv",
@@ -3715,8 +3718,33 @@ fn git_ok(root: &Path, args: &[&str], limit: usize, action: &str) -> Result<GitO
     }
 }
 
+fn git_program() -> PathBuf {
+    #[cfg(windows)]
+    {
+        let in_path = std::env::var_os("PATH")
+            .into_iter()
+            .flat_map(|value| std::env::split_paths(&value).collect::<Vec<_>>())
+            .map(|directory| directory.join("git.exe"));
+        let installed = ["ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"]
+            .into_iter()
+            .filter_map(std::env::var_os)
+            .flat_map(|root| {
+                let root = PathBuf::from(root);
+                [root.join("Git/cmd/git.exe"), root.join("Programs/Git/cmd/git.exe")]
+            });
+        if let Some(path) = in_path.chain(installed).find(|path| path.is_file()) {
+            return path;
+        }
+        PathBuf::from("git.exe")
+    }
+    #[cfg(not(windows))]
+    {
+        PathBuf::from("git")
+    }
+}
+
 fn run_git(root: &Path, args: &[&str], stdout_limit: usize) -> Result<GitOutput> {
-    let mut child = Command::new("git")
+    let mut child = Command::new(git_program())
         .current_dir(root)
         .arg("-c")
         .arg("core.fsmonitor=false")
@@ -3782,7 +3810,7 @@ fn run_git_with_input(
     input: Vec<u8>,
     stdout_limit: usize,
 ) -> Result<GitOutput> {
-    let mut child = Command::new("git")
+    let mut child = Command::new(git_program())
         .current_dir(root)
         .arg("-c")
         .arg("core.fsmonitor=false")
@@ -3855,7 +3883,7 @@ fn run_git_with_input(
 }
 
 fn run_git_digest(root: &Path, args: &[&str], byte_limit: u64) -> Result<(Vec<u8>, u64)> {
-    let mut child = Command::new("git")
+    let mut child = Command::new(git_program())
         .current_dir(root)
         .arg("-c")
         .arg("core.fsmonitor=false")
@@ -3930,6 +3958,23 @@ fn read_limited(mut reader: impl Read, limit: usize) -> std::io::Result<(Vec<u8>
     let truncated = bytes.len() > limit;
     bytes.truncate(limit);
     Ok((bytes, truncated))
+}
+
+fn open_regular_file_nofollow(path: &Path) -> Result<File> {
+    let mut options = fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+    }
+    let file = options.open(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(CoreError::Validation(
+            "untracked repository entry changed before it could be observed".into(),
+        ));
+    }
+    Ok(file)
 }
 
 fn hash_limited(mut reader: impl Read, limit: u64) -> std::io::Result<(Vec<u8>, u64, bool)> {
@@ -4038,14 +4083,21 @@ pub(crate) fn reject_ai_actor(command: &CommandContext) -> Result<()> {
 }
 
 pub(crate) fn require_development_enabled(connection: &Connection, project_id: &str) -> Result<()> {
-    let enabled: bool = connection
+    let state: Option<(bool, String)> = connection
         .query_row(
-            "SELECT enabled FROM space_capabilities WHERE project_id=?1 AND space='development'",
+            "SELECT sc.enabled,p.status FROM space_capabilities sc
+             JOIN projects p ON p.id=sc.project_id
+             WHERE sc.project_id=?1 AND sc.space='development'",
             [project_id],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
-        .optional()?
-        .unwrap_or(false);
+        .optional()?;
+    let Some((enabled, status)) = state else {
+        return Err(CoreError::NotFound(project_id.into()));
+    };
+    if status != "active" {
+        return Err(CoreError::Conflict("project is archived".into()));
+    }
     if !enabled {
         return Err(CoreError::Validation(
             "Development Space capability is disabled".into(),

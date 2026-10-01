@@ -50,7 +50,7 @@ The CP12 5 GB artifact corpus, peak RSS/CPU/disk telemetry, cold desktop UI timi
 
 ## Boundary audit
 
-No CP3+ aggregate or service was implemented. Research, Git intelligence, code analysis, provider-neutral AI, visual reporting, capture, semantic Context Pack selection, and MCP remain assigned to their original checkpoints. ADR-006 changes no CP2 identity, persistence, privacy, or adapter invariant.
+No CP3+ aggregate or service was implemented. Research, Git intelligence, code analysis, provider-neutral AI, HTML-first Human Documentation/visual reporting, capture, semantic Context Pack selection, and MCP remain assigned to their original checkpoints. ADR-006 changes no CP2 identity, persistence, privacy, or adapter invariant. ADR-007 likewise adds no CP2 renderer or canonical migration; it consumes CP2 source, artifact, freshness, privacy, and export foundations through later adapters.
 
 ## Decision
 

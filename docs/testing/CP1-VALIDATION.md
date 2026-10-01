@@ -1,8 +1,8 @@
 # CP1 Architecture Validation
 
-> **Result:** PASS; provider/MCP amendment validated 2026-09-03
+> **Result:** PASS; provider/MCP amendment validated 2026-09-03; HTML-first Human Documentation amendment validated 2026-09-04
 > **Validated:** 2026-08-31  
-> **Amendment validated:** 2026-09-03
+> **Amendments validated:** 2026-09-03 and 2026-09-04
 > **Scope:** Design completeness and readiness to begin CP2, not production implementation.
 
 ## 1. Validation Method
@@ -14,6 +14,7 @@ The CP1 pack was reviewed against the PRD, ADRs, three usage configurations, fiv
 - PRD: present and versioned.
 - CP1 index/scope: present.
 - Architecture Master: present.
+- Human Documentation Architecture and ADR-007: present.
 - Domain Model: present.
 - Spaces/R&D Bridge: present.
 - Data Architecture: present.
@@ -59,6 +60,7 @@ Classification, transitive deny, prompt-injection isolation, path controls, boun
 - identity agrees: UUIDv7 and project ledger sequence; SHA-256 for content.
 - AI agrees: provider-neutral AI Provider Gateway, candidate-only, human authority; Gemini is an adapter, not a domain dependency.
 - external AI agrees: inbound Continuum MCP Server is separate from outbound provider APIs, project-scoped, read-first, and proposal-based.
+- Human Documentation agrees: canonical state composes a versioned renderer-neutral model; safe HTML is primary for people, Markdown remains compatible, and machine Context Packs do not inherit presentation markup.
 - modular usage agrees across PRD, ADR, Spaces, Domain, diagrams, and acceptance.
 - Checkpoint agrees: non-terminal, immutable, scope-aware.
 - CP2 scope agrees: Core foundations only.
@@ -83,15 +85,19 @@ Result: PASS.
 
 ## 6. Residual Risks Accepted for CP2
 
-- Windows/Linux capture implementation remains CP9 work.
+- Capture implementation was assigned to CP9; CP9 later completed the portable contract and OS/WebView adapter, while release-platform/device certification remains CP12.
 - exact provider/model profiles and routing defaults remain CP7 work.
-- embeddings remain deferred to CP10 and off by default.
+- CP10 benchmark evidence keeps embeddings off by default; any future adoption requires a separate privacy/benchmark ADR.
 - exact MCP resource/prompt/tool catalog, client matrix, and optional remote transport remain CP11 work.
 - application-level encryption at rest is deferred; MVP relies on OS/disk security and documents this limitation.
 
 These do not block CP2 because its contract exposes adapters and enforces the relevant invariants without implementing those capabilities.
 
 ADR-006 introduces no schema or behavioral regression in CP2/CP3: their domains reject AI authority, use provider-independent origin/provenance envelopes, and do not require an external client. Result: PASS.
+
+ADR-007 introduces no schema or behavioral regression in CP2–CP5: their deterministic Markdown reports remain valid compatibility evidence, canonical records remain authoritative, and CP8 owns the additive Human Document/HTML presentation layer. Result: PASS.
+
+ADR-008 introduces no regression in CP1–CP8: capture remains an optional Research capability behind the existing application/Artifact/Evidence boundaries, and Development-only operation remains independent. Result: PASS.
 
 ## 7. CP2 Entry Conditions
 

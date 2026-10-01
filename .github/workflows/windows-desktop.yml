@@ -1,0 +1,41 @@
+name: Windows desktop installer
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/continuum-desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - name: Install frontend dependencies
+        working-directory: apps/continuum-desktop
+        run: npm ci
+      - name: Test frontend
+        working-directory: apps/continuum-desktop
+        run: npm test
+      - name: Test core on Windows
+        run: cargo test -p continuum-core --lib
+      - name: Test desktop Rust code on Windows
+        run: cargo test --manifest-path apps/continuum-desktop/src-tauri/Cargo.toml
+      - name: Build Windows NSIS setup executable
+        working-directory: apps/continuum-desktop
+        run: npm run build:windows
+      - name: Upload unsigned setup executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: Continuum-Windows-x64-unsigned
+          path: apps/continuum-desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error

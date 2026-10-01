@@ -1,0 +1,39 @@
+{
+  "arch": "x86_64",
+  "bounds": {
+    "action_at_limit": "reduce_quality",
+    "max_buffer_bytes": 16777216,
+    "max_pending_segments": 4,
+    "max_segment_bytes": 33554432
+  },
+  "build": "0.9.0",
+  "checkpoint": "CP9",
+  "correctness": "30 unique segments, marker-to-Evidence traceability, completed lifecycle, and final integrity scan healthy",
+  "cpu": "AMD Ryzen 5 5600H with Radeon Graphics",
+  "fixture": {
+    "bytes_per_segment": 524288,
+    "name": "segmented-capture-30x512k-v1",
+    "segments": 30,
+    "total_bytes": 15728640
+  },
+  "local_checkpoint_target_ms": {
+    "segment_persist_p95": 500
+  },
+  "memory": "15745612 kB",
+  "memory_high_water_kib": {
+    "after": 8432,
+    "before": 7352,
+    "delta": 1080
+  },
+  "os": "linux",
+  "protocol": {
+    "content_dedup_disabled_by_unique_payloads": true,
+    "network_included": false,
+    "samples": 30
+  },
+  "segment_persist_ms": {
+    "max": 11.179801,
+    "p50": 10.295582,
+    "p95": 11.003518
+  }
+}

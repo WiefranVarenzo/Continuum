@@ -20,8 +20,9 @@
 - [x] Dirty working-tree paths do not receive stale structural claims from mutable bytes.
 - [x] Unborn Repository analysis is explicit and non-fabricating.
 - [x] Stable file identity survives a committed rename with CP4 evidence.
+- [x] Ordinary copy receives a distinct identity, while rename plus immediate old-path reuse in one commit preserves the moved identity and assigns a new ID to the reused path.
 - [x] Deleted code/tests become unavailable; reappearance restores the same identity.
-- [x] Returning to an older analyzed baseline safely reapplies current presence without duplicating the immutable AnalysisRun.
+- [x] Returning to an older analyzed baseline reuses the immutable AnalysisRun without rewinding the latest reconciled current presence.
 - [x] Cache key contains content, language, analyzer, analyzer version, and output schema.
 - [x] Immutable Git blobs are fetched in one bounded, framed batch and duplicate object IDs are deduplicated.
 - [x] Default and hard file/byte/output limits fail before or roll back canonical persistence.
@@ -35,7 +36,10 @@
 - [x] Development Checkpoint schema v2 cites latest AnalysisRun/TestRun as versioned sources.
 - [x] Export/restore preserves CP5 identity, observations, relationships, TestRuns, and integrity.
 - [x] Integrity diagnostics detect missing detail, mismatched counts/sources, invalid links, and projection gaps.
-- [x] v1–v4 projects are backed up and migrate safely to schema v5.
+- [x] v1–v4 projects are backed up and migrate safely to schema v6; populated v5 aliases/cache migrate losslessly to v6.
+- [x] Historical analysis cannot rewind the latest reconciled current projection.
+- [x] Rename continuity and later path reuse produce correct, distinct file identities.
+- [x] Artifact retry mismatch, archived writes, cache bounds, atomic staging, and no-follow local file opens fail closed.
 - [x] CP2, CP3, and CP4 regression suites remain green.
 - [x] 500-file cold and one-changed-file incremental benchmark passes declared CP5 targets.
 - [x] Formatting, zero-warning lint, tests, dependency metadata, and documentation checks pass.

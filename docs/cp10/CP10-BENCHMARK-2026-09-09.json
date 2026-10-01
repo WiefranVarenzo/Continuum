@@ -1,0 +1,46 @@
+{
+  "arch": "x86_64",
+  "build": "0.10.0",
+  "checkpoint": "CP10",
+  "context_pack": {
+    "estimated_tokens": 26944,
+    "included_bytes": 80624,
+    "included_items": 200,
+    "omissions": 552
+  },
+  "context_pack_selection_ms": {
+    "max": 79.389047,
+    "p50": 73.888852,
+    "p95": 78.622001
+  },
+  "correctness": "stable request/content fingerprints across 50 runs, fresh source boundary, bounded Context Pack, and healthy final integrity scan",
+  "cpu": "AMD Ryzen 5 5600H with Radeon Graphics",
+  "current_project_state_ms": {
+    "max": 14.70321,
+    "p50": 12.207616,
+    "p95": 14.11994
+  },
+  "fixture": {
+    "checkpoint_sources": 750,
+    "entities": 750,
+    "name": "core-context-750-v1"
+  },
+  "memory": "15745612 kB",
+  "memory_high_water_kib": {
+    "after": 14936,
+    "before": 13004,
+    "delta": 1932
+  },
+  "os": "linux",
+  "protocol": {
+    "ai_included": false,
+    "network_included": false,
+    "release_build": true,
+    "samples": 50,
+    "warmup": 1
+  },
+  "targets_ms": {
+    "context_pack_selection_p95": 2000,
+    "current_project_state_p95": 1000
+  }
+}

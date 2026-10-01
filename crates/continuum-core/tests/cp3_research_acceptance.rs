@@ -1,9 +1,9 @@
 use continuum_core::{
     ActorKind, ActorRef, CommandContext, ContinuityStore, CoreError, EvidenceAnnotationUpdate,
-    EvidenceKind, FindingSource, FindingSourceAssessment, NewDecision, NewEntity, NewEvidence,
-    NewExperiment, NewFinding, NewRelationship, NewRequirement, NewResearchQuestion,
-    NewResearchResult, NewResearchSession, OriginKind, PageRequest, QuestionKind,
-    RelationshipReviewState, RequirementRationaleOrigin, ResearchCheckpointInput,
+    EvidenceDetailsUpdate, EvidenceKind, FindingSource, FindingSourceAssessment, NewDecision,
+    NewEntity, NewEvidence, NewExperiment, NewFinding, NewRelationship, NewRequirement,
+    NewResearchQuestion, NewResearchResult, NewResearchSession, OriginKind, PageRequest,
+    QuestionKind, RelationshipReviewState, RequirementRationaleOrigin, ResearchCheckpointInput,
     ResearchEntityKind, ResearchQuestionUpdate, ResearchResultOutcome, ResearchSearchQuery,
     ResearchTimelineFilter, Space, new_id,
 };
@@ -382,6 +382,30 @@ fn evidence_original_source_is_immutable_while_annotations_are_versioned() {
     assert_eq!(updated.details["original_artifact_id"], artifact.id);
     assert_eq!(updated.details["stable_reference"], artifact.sha256);
     assert_eq!(updated.details["annotation"], "Reviewed annotation");
+
+    let renamed = store
+        .update_evidence_details(
+            &user_command(),
+            &updated.entity.id,
+            EvidenceDetailsUpdate {
+                title: "Pricing evidence for realtime transcription".into(),
+                annotation: "User intent: compare realtime pricing.".into(),
+                summary: "The captured image shows a pricing table.".into(),
+                relevance: "Supports the active cost comparison.".into(),
+                expected_version: updated.entity.version,
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        renamed.entity.title,
+        "Pricing evidence for realtime transcription"
+    );
+    assert_eq!(renamed.entity.version, 3);
+    assert_eq!(renamed.details["original_artifact_id"], artifact.id);
+    assert_eq!(
+        renamed.details["annotation"],
+        "User intent: compare realtime pricing."
+    );
 }
 
 #[test]

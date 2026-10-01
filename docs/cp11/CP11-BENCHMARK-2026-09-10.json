@@ -1,0 +1,23 @@
+{
+  "checkpoint": "CP11",
+  "date": "2026-09-10",
+  "profile": "release local single-process STDIO JSON-RPC; 10 warmups + 100 measured operations",
+  "target_hardware": "AMD Ryzen 5 5600H / 16 GB RAM",
+  "initialize_ms": 3.547391,
+  "tool_catalog": {
+    "p50_ms": 3.561457,
+    "p95_ms": 3.993633,
+    "target_p95_ms": 50
+  },
+  "bounded_current_state": {
+    "p50_ms": 6.815784,
+    "p95_ms": 7.592619999999999,
+    "target_p95_ms": 500
+  },
+  "resident_memory": {
+    "baseline_kib": 7732,
+    "peak_kib": 8008,
+    "delta_kib": 276,
+    "target_delta_kib": 131072
+  }
+}

@@ -1,0 +1,6 @@
+{"jsonrpc":"2.0","id":"init","method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{"roots":{"listChanged":true}},"clientInfo":{"name":"Claude Code","version":"2026.09"}}}
+{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}
+{"jsonrpc":"2.0","id":"tools","method":"tools/list"}
+{"jsonrpc":"2.0","id":"resources","method":"resources/templates/list","params":{}}
+{"jsonrpc":"2.0","id":"prompt","method":"prompts/get","params":{"name":"continuum.resume","arguments":{"scope":"core"}}}
+{"jsonrpc":"2.0","id":"state","method":"tools/call","params":{"name":"continuum.context.build","arguments":{"task":"Resume safely","scope":"core","max_tokens":2048,"max_items":20}}}

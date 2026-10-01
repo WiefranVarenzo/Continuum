@@ -20,7 +20,7 @@ impl Space {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum CheckpointScope {
     Research,
@@ -278,10 +278,15 @@ pub struct Relationship {
     pub actor_id: String,
     pub confidence: Option<f64>,
     pub review_state: String,
+    pub state_version: i64,
+    pub annotation: String,
     pub direct_source_ids: Vec<String>,
     pub supersedes_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    pub reviewed_at: Option<String>,
+    pub reviewed_by: Option<String>,
+    pub retired_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

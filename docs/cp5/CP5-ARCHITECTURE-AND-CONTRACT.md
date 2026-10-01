@@ -2,7 +2,7 @@
 
 > **Status:** Implemented and validated
 >
-> **Build:** `continuum-core 0.5.0` / schema v5
+> **Build:** `continuum-core 0.5.0` / schema v6 (CP5.1 hardened)
 >
 > **Depends on:** CP1 architecture, CP2.1 Continuity Core, CP3 shared Requirement, CP4 immutable Git coordinates
 
@@ -89,7 +89,7 @@ The source fingerprint includes the CP4 baseline coordinate, including worktree 
 - Parser recovery: Tree-sitter may return a partial tree, but the run and affected observations expose `parse_error` rather than presenting the result as complete.
 - Git symlink: target bytes remain a hashed file-level observation and are never parsed as source, even when the link path has a supported extension.
 
-An identical coordinate returns the existing AnalysisRun. If the user returns from another branch/dirty state to a previously analyzed coordinate, CP5 reapplies that immutable run to the current presence projection and emits `code_intelligence.analysis.reapplied` only when projection state changes. A different coordinate creates a new immutable observation set.
+An identical coordinate returns the existing AnalysisRun. It may update the current presence projection only when that baseline is also the Repository's latest reconciliation. Reopening or analyzing an older coordinate remains useful historical inspection, but cannot rewind the current bookmark/projection. A different coordinate creates a new immutable observation set.
 
 ## 6. Analyzer Matrix
 
@@ -136,7 +136,10 @@ Stable identity with kind `file`, `module`, `symbol`, `dependency`, or `configur
 - present at a later baseline → same ID, new immutable observation;
 - absent from a later complete snapshot → `unavailable`, with first unavailable baseline recorded;
 - reappears with the same deterministic key → same ID returns to `active`;
-- committed file rename with CP4 rename evidence and unchanged content → same file ID with both path aliases;
+- committed file rename with CP4 rename evidence and unchanged content → same file ID; the old path alias is retired at that baseline and the new alias becomes active;
+- copy with an unchanged source path → distinct file ID; when Git reports a copy because the old path was simultaneously replaced with different bytes, CP5 uses the exact snapshot hashes to preserve the moved identity before assigning the reused path;
+- deletion followed by byte-identical restoration at the same path → same file ID is reactivated;
+- a different file later reusing a retired path → new file ID, with exactly one active alias for that path;
 - symbol identity is based on stable file identity, symbol kind, and qualified name.
 
 ### Test
@@ -173,7 +176,7 @@ The rebuildable cache key is:
 content SHA-256 + language + analyzer ID + analyzer version + output schema version
 ```
 
-It is path-independent, which permits reuse after unchanged files move, while stable identities remain path/repository aware. Any analyzer rule, parser, or output-schema change invalidates reuse by key. Cache deletion is safe because canonical observations and Git sources remain intact.
+It is path-independent, which permits reuse after unchanged files move, while stable identities remain path/repository aware. Any analyzer rule, parser, or output-schema change invalidates reuse by key. Cache deletion is safe because canonical observations and Git sources remain intact. Schema v6 records byte size and last access, and enforces a deterministic 256 MiB LRU fail-safe.
 
 Git tree entries are listed once and eligible immutable blobs are read through one bounded `git cat-file --batch` process. Duplicate object IDs are fetched once. A new baseline still receives a complete, immutable observation set, while unchanged content reuses cached parser output.
 
@@ -189,7 +192,7 @@ Stable diagnostic cases include missing normalized detail, count mismatch, cross
 
 ## 11. Checkpoint, Resume, Report, and Export
 
-Development Checkpoint schema v2 includes the latest AnalysisRun and TestRun per Repository as exact versioned sources. Later analysis or TestRun events make an older checkpoint stale through the existing ledger/event contract. Development Report contains deterministic Code Intelligence and Test Run sections and never presents missing research rationale as known.
+Development Checkpoint schema v2 includes the latest AnalysisRun and TestRun per Repository as exact versioned sources. Later analysis or TestRun events make an older checkpoint stale through the existing ledger/event contract. Development Report contains deterministic Code Intelligence and Test Run sections and never presents missing research rationale as known. This output remains the ADR-007 compatibility/content baseline; CP8 now presents the same source-addressed facts as concise HTML tables, status views, and interactive traceability without modifying CP5 analysis observations.
 
 Search remains local, bounded, project-scoped, type/status filterable, and includes AnalysisRun, CodeEntity, Test, and TestRun projections. Export/restore preserves canonical observations, stable IDs, aliases, relationships, and audit history. The analyzer cache is rebuildable rather than authoritative.
 
@@ -206,7 +209,7 @@ Search remains local, bounded, project-scoped, type/status filterable, and inclu
 
 ## 13. Versioning and Dependencies
 
-- Continuum schema: v5.
+- Continuum schema: v6 (`0006_cp5_1_hardening.sql` preserves v5 data while adding temporal aliases and bounded-cache metadata).
 - Analyzer bundle: `continuum-code-intelligence-v1`.
 - Analyzer contract: v1; output schema: v1.
 - `ast-grep-core` and `ast-grep-language`: exactly `0.45.3`.
@@ -226,3 +229,5 @@ CP6 receives stable, source-addressed nodes and explicit edges:
 - CP5: AnalysisRun, CodeEntity, Test, TestRun and typed relationships.
 
 CP6 may build bidirectional traversal, validate provenance gaps, and connect the complete optional chain. It must preserve partial standalone chains, origin labels, source IDs, historical observations, and the rule that absence of Research is not an error for Development-only work.
+
+For the later Human Documentation path, CP6 should expose bounded, project-scoped graph projections rather than presentation markup. CP8 owns Human Document composition, HTML/Mermaid/React Flow rendering, offline export, accessibility, and parity with the CP5 deterministic report.

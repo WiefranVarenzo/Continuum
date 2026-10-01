@@ -132,7 +132,7 @@ The saved bookmark remains readable even when stale or the Repository moved.
 
 ## 8. Deterministic Development Report
 
-The local report lists Repository IDs and fingerprints, latest exact baseline, Requirement status and rationale origin, ChangeSet status/kind/intent origin, commit and file-observation counts, source ledger sequence, and the fact that Git remains authoritative. It escapes and bounds user/repository-controlled text and never invents research rationale.
+The local report lists Repository IDs and fingerprints, latest exact baseline, Requirement status and rationale origin, ChangeSet status/kind/intent origin, commit and file-observation counts, source ledger sequence, and the fact that Git remains authoritative. It escapes and bounds user/repository-controlled text and never invents research rationale. It remains a deterministic compatibility projection under ADR-007; CP8 now composes the same facts into HTML-first Development Documentation through the Human Document Model without changing CP4 observations.
 
 ## 9. Failure and Recovery
 
@@ -149,7 +149,7 @@ The local report lists Repository IDs and fingerprints, latest exact baseline, R
 - file/symbol CodeEntity extraction, dependency/configuration parsing, Tests and TestRuns: CP5;
 - full bidirectional provenance traversal and gap detection: CP6;
 - change explanation by configured model providers: CP7;
-- styled documentation and diagrams: CP8;
+- HTML-first Human Documentation, Human Document schema, offline HTML export, styled documentation, and diagrams: CP8;
 - semantic checkpoint/context selection: CP10;
 - external client access: CP11 MCP boundary;
 - Windows certification, stress/cancellation/background-worker release evidence: CP12.

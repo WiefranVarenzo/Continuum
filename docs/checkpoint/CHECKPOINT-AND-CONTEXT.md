@@ -1,6 +1,6 @@
 # Checkpoint and Context Architecture
 
-> **Status:** Approved architecture; Core envelope implemented in CP2, Research bookmark/resume in CP3, Development bookmark/resume through CP5, full Context Engine remains CP10.
+> **Status:** Implemented and validated in CP10; consumed through the permissioned CP11 MCP boundary; schema v12 with `context` contract v1 unchanged.
 
 ## 1. Product Contract
 
@@ -25,7 +25,7 @@ deterministic_state, reviewed_semantic_summary
 ```text
 checkpoint_id        UUIDv7
 project_id           UUIDv7
-scope                research | development | integrated_rd
+scope                research | development | integrated | core
 ledger_sequence      exact committed boundary
 schema_version
 created_at/by
@@ -45,7 +45,7 @@ Checkpoints are immutable. A correction creates a superseding Checkpoint. Stalen
 
 ### Research
 
-Active Questions, session state, Evidence reviewed/unreviewed, Experiments and Results, accepted/challenged Findings, Decisions, contradictions, gaps, and next research actions. No development field is mandatory.
+Active Questions, Research Session state, Evidence reviewed/unreviewed, Experiments and Results, accepted/challenged Findings, Decisions, contradictions, gaps, and next research actions. When relevant, include active/paused/interrupted capture session IDs, latest persisted segment/marker boundary, recoverability/failure status, and selected capture-backed Evidence IDs. Raw complete media is never embedded by default. No development field is mandatory.
 
 ### Development
 
@@ -99,6 +99,8 @@ Retrieval tiers:
 3. supporting/challenging Evidence, Results, diffs, Tests, and Decisions;
 4. deeper artifacts or graph expansion explicitly requested or needed within budget.
 
+Capture-backed sources follow the same tiers: tier 1 may state active/interrupted capture status, tiers 2–3 may include markers and selected Evidence metadata or bounded excerpts, and raw media bytes require an explicit authorized request. Checkpoint creation records only stable IDs and the latest committed fragment boundary, never an in-memory recorder buffer.
+
 Candidate generation is deterministic using type, status, graph distance, explicit links, FTS, recency, checkpoint relevance, repository coordinates, and user filters. AI may rerank/compress only the permitted candidate set.
 
 ## 9. Context Pack Output
@@ -106,6 +108,8 @@ Candidate generation is deterministic using type, status, graph distance, explic
 Every pack includes schema version, purpose, audience, consumer target, scope, generated time, checkpoint/ledger position, privacy policy version, ordered items, source IDs/versions, provenance edges, freshness, included bytes/token estimate and method, omission summary, unresolved contradictions, and unavailable sources. It never implies omitted content does not exist.
 
 Packs are ephemeral by default. Saving creates a GeneratedArtifact with source state and staleness tracking.
+
+Context Packs are machine-facing and renderer-neutral. They do not include HTML/CSS/JavaScript presentation markup by default. Human Documentation may cite the same checkpoint and source entities, but its Human Document Model and rendered HTML are separate projections; an explicitly requested saved report can be referenced as an Artifact without replacing the structured context.
 
 ## 10. Privacy and Determinism
 
@@ -115,8 +119,9 @@ The same provider-neutral pack contract serves CP7 outbound semantic tasks and C
 
 ## 11. Acceptance
 
-- all three scope variants validate without placeholders;
+- Research, Development, Integrated, and Core scope variants validate without placeholders;
 - interrupted incomplete work resumes correctly;
+- active, paused, failed, or interrupted capture resumes from the latest persisted CP9 boundary without claiming uncommitted media;
 - changed relevant state marks older output stale;
 - pack respects hard budget or returns explicit budget failure/omissions;
 - every included claim resolves to authorized source IDs;

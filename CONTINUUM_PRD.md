@@ -1,18 +1,20 @@
 # Continuum - Product Requirements Document
 
-> **Status:** Approved product baseline; implementation validated through CP5
-> **Version:** 1.4.0
-> **Last updated:** 2026-09-04
+> **Status:** Approved product baseline; implementation complete through CP12 for Linux pilot scope
+> **Version:** 2.0.0
+> **Last updated:** 2026-09-12
 > **Primary source of truth:** This Markdown document  
-> **Product stage:** CP5 PASS - Ready for CP6 Provenance & Knowledge Graph
+> **Product stage:** CP12 Linux pilot PASS - cross-platform signed GA qualification remains explicit
 > **Change policy:** Material changes to product direction, domain boundaries, privacy posture, or checkpoint scope require an explicit decision record (ADR) and an update to this PRD.
-> **Related decisions:** [ADR-001 - Modular Spaces and Optional R&D Bridge](docs/adr/ADR-001-MODULAR-SPACES-AND-OPTIONAL-RD-BRIDGE.md); [ADR-006 - Provider-Neutral AI and MCP Boundaries](docs/adr/ADR-006-PROVIDER-NEUTRAL-AI-AND-MCP-BOUNDARIES.md)
+> **Related decisions:** [ADR-001 - Modular Spaces and Optional R&D Bridge](docs/adr/ADR-001-MODULAR-SPACES-AND-OPTIONAL-RD-BRIDGE.md); [ADR-006 - Provider-Neutral AI and MCP Boundaries](docs/adr/ADR-006-PROVIDER-NEUTRAL-AI-AND-MCP-BOUNDARIES.md); [ADR-007 - HTML-First Human Documentation](docs/adr/ADR-007-HTML-FIRST-HUMAN-DOCUMENTATION.md); [ADR-008 - OS-Mediated Segmented Capture](docs/adr/ADR-008-OS-MEDIATED-SEGMENTED-CAPTURE.md); [ADR-009 - Deterministic Bounded Context Composition](docs/adr/ADR-009-DETERMINISTIC-BOUNDED-CONTEXT-COMPOSITION.md); [ADR-010 - Permissioned Local MCP and Review-Gated Proposals](docs/adr/ADR-010-PERMISSIONED-LOCAL-MCP-AND-REVIEW-GATED-PROPOSALS.md)
 
 ## 1. Executive Summary
 
 Continuum is a local-first R&D workspace that preserves where work stopped, what is already known, why decisions were made, and what should happen next. It gives a user two purpose-built working environments-**Research Space** and **Development Space**-backed by a shared **Continuity Core**. Each Space is independently useful: a user may conduct research without development, document and continue development without repeating prior research, or connect both into a seamless R&D learning loop. The system records evidence, experiments, findings, decisions, requirements, repository changes, code structures, tests, and generated artifacts as traceable project history rather than disconnected notes and files.
 
 The central product promise is continuity: a user, collaborator, or AI assistant should be able to answer *where work stopped*, *what changed*, *why it changed*, *which evidence justified it*, *what remains unresolved*, and *what to do next*. When Research and Development are connected, the same history should also reveal which Decision authorized a Requirement, where it was implemented, and how it was verified. Continuum therefore treats provenance, smart-bookmark Checkpoints, progressive retrieval, and reproducible project state as first-class product capabilities.
+
+For people, this knowledge is presented primarily as concise, website-like HTML documentation inside the desktop application and as an offline-capable HTML export. Overview cards, tables, timelines, and interactive diagrams expose the important state first while preserving expandable detail and source citations. Markdown remains a compatibility and portable-text projection rather than the default end-user report experience.
 
 The initial product is optimized for a single technical researcher/developer working on a laptop with an AMD Ryzen 5 5600H and 16 GB RAM. Durable project facts are stored locally and deterministically. A provider-neutral AI layer can use Gemini, OpenAI, Anthropic, selected OpenAI-compatible services such as OpenRouter, DeepSeek, and BytePlus ModelArk, or future conforming providers for bounded semantic assistance. No model becomes the source of truth or may silently mutate canonical records. AI inputs pass through one privacy gateway, use versioned prompts and schemas, and produce reviewable outputs with provenance. Separately, a permissioned Continuum MCP Server lets compatible external clients such as Codex, Claude Code, and Gemini CLI consume bounded project context and submit proposals without raw database or filesystem access.
 
@@ -198,7 +200,7 @@ Expected outcome: useful work can resume without rereading the entire project.
 1. The user selects scope, audience, and checkpoint/time range.
 2. The system builds a deterministic source bundle.
 3. AI may plan narrative or diagram structure within a versioned schema.
-4. The renderer produces a Research Report, development documentation, knowledge graph view, or architecture diagram.
+4. Deterministic composition produces a versioned Human Document Model; approved renderers present it primarily as a safe HTML Research Report, Development Documentation view, Integrated R&D Report, knowledge graph view, or architecture diagram.
 5. Every generated claim retains source references; stale outputs are visibly marked.
 
 ## 8. Product Scope and System Boundaries
@@ -219,6 +221,7 @@ Expected outcome: useful work can resume without rereading the entire project.
 - provenance graph and bidirectional navigation;
 - provider-neutral semantic services with Gemini, OpenAI, Anthropic, selected OpenAI-compatible providers, structured outputs, caching, privacy controls, and prompt/schema versioning;
 - React Flow + ELK graph/diagram presentation;
+- HTML-first Human Documentation with concise progressive disclosure, safe offline export, Mermaid for bounded portable diagrams, and Markdown compatibility output;
 - capture workflow for screen, system audio, microphone, screenshots, markers, browser, files, and web evidence;
 - checkpoints, Context Packs, and progressive retrieval;
 - permissioned MCP-based AI Continuity Interface for compatible external clients;
@@ -280,6 +283,7 @@ Research-only, Development-only, and Connected R&D are usage configurations, not
 - **Checkpoint:** immutable summary/index of project state at a known ledger position.
 - **ContextPack:** purpose-bound, budgeted, provenance-bearing retrieval result.
 - **GeneratedArtifact:** AI-assisted or deterministic report, diagram, explanation, or summary.
+- **HumanDocument:** Renderer-neutral, versioned report projection containing semantic blocks, citations, source boundary, freshness, privacy, and presentation metadata.
 - **Event:** timestamped record of a state transition or observed external change.
 
 ### 9.2 Entity invariants
@@ -337,7 +341,7 @@ The graph must also represent:
 - PRV-04: Superseded entities remain traceable from current entities.
 - PRV-05: Imported and captured Evidence records include origin URI/path when permissible, capture time, method, content hash, and availability state.
 - PRV-06: AI output records include model/provider, prompt template version, output schema version, input entity IDs, generation time, and review status.
-- PRV-07: Generated reports and diagrams declare their source checkpoint or ledger position and become visibly stale when relevant sources change.
+- PRV-07: Generated reports and diagrams declare their source checkpoint or ledger position, Human Document/renderer version where applicable, and become visibly stale when relevant sources change.
 
 ## 10. Functional Requirements
 
@@ -439,6 +443,14 @@ The graph must also represent:
 - FR-VIS-005: Users can generate Research Reports, architecture diagrams, and Development Documentation from selected scope.
 - FR-VIS-006: Reports cite underlying entity IDs and identify unresolved uncertainty or contradiction.
 - FR-VIS-007: Generated artifacts are versioned, reproducible from declared inputs where practical, and visibly marked when stale.
+- FR-VIS-008: The default human report experience is semantic HTML rendered inside the desktop application; users are not required to read raw Markdown.
+- FR-VIS-009: Reports use progressive disclosure: overview, key state, blockers, validation, and next actions appear first while complete details and citations remain reachable.
+- FR-VIS-010: Continuum can export a local self-contained HTML report or verified local bundle that opens without a Continuum server, network connection, CDN, remote font, or remote script.
+- FR-VIS-011: A versioned renderer-neutral Human Document Model separates source composition from HTML, Markdown, and future PDF renderers.
+- FR-VIS-012: Markdown remains a supported compatibility and portable-text projection with semantic parity for material facts, citations, uncertainty, omissions, and freshness.
+- FR-VIS-013: Mermaid renders bounded portable flow, sequence, state, timeline, and simple relationship diagrams; React Flow with ELK renders interactive knowledge graphs and complex traceability views.
+- FR-VIS-014: Human-controlled, imported, repository, and AI content cannot inject arbitrary HTML, CSS, JavaScript, event handlers, executable URLs, Mermaid directives, or remote resources.
+- FR-VIS-015: Tables, timelines, and diagrams remain keyboard accessible, zoomable or reflowable where applicable, and degrade to source-backed textual alternatives.
 
 ### 10.8 Research Capture System
 
@@ -501,7 +513,7 @@ The following must remain deterministic and application-controlled:
 - graph persistence, relationship constraints, and traversal;
 - access control, privacy policy evaluation, redaction gates, and audit metadata;
 - checkpoint ledger position and Context Pack budget enforcement;
-- report/diagram rendering from an approved schema;
+- Human Document composition and safe report/diagram rendering from an approved schema;
 - retry, timeout, cache, cancellation, and error-state behavior.
 
 ### 11.2 AI-appropriate responsibilities
@@ -573,6 +585,10 @@ AI output progresses through explicit states such as `generated`, `invalid`, `pe
 - NFR-UX-003: Long-running operations show progress and can be cancelled where safe.
 - NFR-UX-004: AI, deterministic, imported, and user-authored content are visually distinguishable.
 - NFR-UX-005: Destructive actions require clear scope and recovery expectations.
+- NFR-UX-006: Human Documentation defaults to a concise HTML overview and does not require reading a long Markdown transcript.
+- NFR-UX-007: Complete evidence, provenance, uncertainty, exclusions, and source citations remain reachable from compact report views.
+- NFR-UX-008: HTML reports use semantic landmarks, ordered headings, visible focus, keyboard operation, accessible table structure, diagram alternatives, and reduced-motion support.
+- NFR-UX-009: Text zoom/reflow and light/dark themes preserve meaning, contrast, and usability without relying on color alone.
 
 ### 12.5 Observability
 
@@ -627,6 +643,9 @@ Defaults should be conservative. Exact default classification and inheritance be
 - SEC-020: MCP authorization is checked on every request against project, Space, resource/tool, privacy audience, and budget scope.
 - SEC-021: MCP exposes no raw database, SQL, unrestricted filesystem, shell, environment, credential, or direct canonical-write capability.
 - SEC-022: Streamable HTTP remains disabled until origin validation, local-binding defaults, authentication, session, revocation, and deployment threat controls pass.
+- SEC-023: Human Document renderers escape untrusted text by default, allowlist any supported rich-text subset, restrict URL schemes, and reject arbitrary executable markup.
+- SEC-024: In-product and exported HTML uses a restrictive Content Security Policy and grants no ambient database, arbitrary filesystem, shell, credential, provider, or network authority.
+- SEC-025: Interactive report behavior comes only from pinned Continuum renderer assets operating on schema-valid data; AI and project content cannot supply executable renderer code.
 
 ### 13.5 Capture consent
 
@@ -636,7 +655,7 @@ Defaults should be conservative. Exact default classification and inheritance be
 
 ### 13.6 Threats in scope
 
-CP1 threat modeling must cover malicious repository content, prompt injection inside Evidence, secret exfiltration, unsafe provider routing/failover, compatibility drift, unsafe file parsing, artifact tampering, database corruption, over-broad Context Packs, unauthorized or cross-project MCP access, confused-deputy behavior, capture without awareness, and denial of service through oversized graphs/media/repos/AI responses.
+CP1 threat modeling must cover malicious repository content, prompt injection inside Evidence, secret exfiltration, unsafe provider routing/failover, compatibility drift, unsafe file parsing, stored report/HTML/diagram injection, artifact tampering, database corruption, over-broad Context Packs, unauthorized or cross-project MCP access, confused-deputy behavior, capture without awareness, and denial of service through oversized reports/graphs/media/repos/AI responses.
 
 ## 14. Performance and Resource Targets
 
@@ -671,6 +690,8 @@ Media payload size is measured separately from entity counts.
 - PERF-009: Incremental Git ingestion of 100 new commits: completes within 60 seconds under the Standard fixture, with progress and cancellation.
 - PERF-010: Incremental code analysis should prioritize changed files and expose first useful results within 5 seconds; full completion is a background task.
 - PERF-017: Local stdio MCP Current Project State or existing Checkpoint first-page response adds p95 ≤ 500 ms server overhead beyond the equivalent application query, excluding external-client/model latency.
+- PERF-018: A cached scoped HTML report exposes its first useful overview p95 ≤ 2 seconds without eagerly rendering off-screen tables, media, or graph detail.
+- PERF-019: Deterministic composition and local HTML export of a normal scoped report completes p95 ≤ 5 seconds excluding AI/network latency; larger reports show progress, remain cancellable, and publish no valid-looking partial export.
 
 ### 14.4 Resource budgets
 
@@ -732,7 +753,7 @@ Prove that a single user can use Research Space or Development Space independent
 - provider-neutral AI-proposed research synthesis, candidate Findings, contradiction analysis, and change explanation through the privacy gateway, proven with Gemini and at least one non-Gemini provider path;
 - semantic Checkpoints and task-scoped Context Packs;
 - a local stdio Continuum MCP Server supporting the scoped read/resume workflow and reviewable proposal submission for supported external clients;
-- scoped knowledge graph visualization and a basic cited Research Report;
+- scoped knowledge graph visualization and a basic cited HTML Research Report with concise overview, expandable detail, and Markdown compatibility output;
 - basic screenshot, file, web evidence, marker, and one supported recording path; advanced cross-platform capture may follow;
 - export/backup, migrations, diagnostics, and recovery needed for pilot safety;
 - measured performance on the reference hardware.
@@ -741,7 +762,7 @@ Prove that a single user can use Research Space or Development Space independent
 
 - simultaneous collaboration and hosted sync;
 - broad language/analyzer coverage;
-- advanced report theming and complex diagram editing;
+- custom report themes beyond the accessible built-in light/dark templates and complex free-form diagram editing;
 - every OS-specific system-audio backend;
 - full transcription/OCR pipeline if it jeopardizes resource targets;
 - unrestricted external write APIs;
@@ -826,7 +847,7 @@ Exit: a user can start from existing/manual/external development intent, ingest 
 
 ### CP5 - Code Intelligence
 
-Status: **PASS (validated 2026-09-04).** Architecture, schema v5, implementation, migration, traceability, acceptance, multi-language fixtures, benchmark, and validation evidence are recorded in `docs/cp5/`.
+Status: **CP5.1 PASS (validated 2026-09-08).** Architecture, schema v6 correctness hardening, implementation, migration, traceability, acceptance, multi-language fixtures, benchmark, and validation evidence are recorded in `docs/cp5/`.
 
 Purpose: understand code structure deterministically.
 
@@ -852,6 +873,8 @@ Deliverables:
 
 Exit: standalone partial chains and the optional end-to-end Connected R&D chain can be created, queried, validated, and audited without AI; Learning Feedback can cross the bridge without forcing a loop.
 
+Status: **CP6 PASS (validated 2026-09-08).** Schema v7, bounded bidirectional traversal, relationship review/history, Learning Feedback, graph gap/cycle/integrity validation, export/restore coverage, acceptance fixtures, and release benchmark evidence are recorded in `docs/cp6/`.
+
 ### CP7 - Provider-Neutral Semantic Intelligence
 
 Purpose: add bounded semantic assistance without provider lock-in.
@@ -870,6 +893,8 @@ Deliverables:
 
 Exit: enabled providers pass the common conformance gates; routing and failover are inspectable; all AI tasks fail safely, respect privacy policy, cite inputs, and cannot silently mutate canonical truth.
 
+Status: **CP7 PASS (validated 2026-09-08).** Schema v8, provider registry/capability policy, bounded source closure, privacy classification and consent, deterministic routing/failover, Gemini and OpenAI-compatible envelopes, schema/grounding/presentation validation, reviewable candidates, versioned cache, attempt provenance, adversarial acceptance tests, and release benchmark evidence are recorded in `docs/cp7/`. Live provider/profile facts remain onboarding and CP12 certification evidence rather than canonical domain assumptions.
+
 ### CP8 - Visual Intelligence & Reports
 
 Purpose: make project reasoning understandable and shareable.
@@ -877,11 +902,16 @@ Purpose: make project reasoning understandable and shareable.
 Deliverables:
 
 - React Flow + ELK scoped knowledge graph;
-- AI diagram planner with deterministic renderer;
-- Research Report, architecture diagram, and Development Documentation generation;
-- freshness and citations for generated artifacts.
+- Mermaid for bounded portable diagrams plus an AI diagram planner with deterministic schema validation and rendering;
+- versioned Human Document Model and reusable report component/template system;
+- HTML-first Research Report, Development Documentation, Integrated R&D Report, architecture explanation, timeline, and handover views;
+- concise overview with expandable detail, tables, citations, uncertainty, omissions, and source/AI authorship indicators;
+- offline self-contained HTML export and semantic-parity Markdown compatibility renderer;
+- accessibility, restrictive rendering security, freshness, and citations for generated artifacts.
 
-Exit: users can navigate a scoped graph and generate a source-backed, versioned report within resource budgets.
+Exit: users can navigate a scoped graph and open/export a safe, accessible, source-backed, versioned HTML report within resource budgets; the report works offline, exposes full verification detail on demand, and preserves material-fact/citation parity with compatibility Markdown.
+
+Status: **CP8 PASS (validated 2026-09-08).** Schema v9, renderer-neutral Human Document composition, immutable source/export records, freshness and audience filtering, HTML/Markdown projection parity, Tauri v2 report bridge, responsive semantic React UI, lazy React Flow + ELK graph, structured strict Mermaid adapter, adversarial acceptance tests, visual QA, and target-hardware benchmark evidence are recorded in `docs/cp8/`. Captured-media previews remain CP9; installers and cross-platform release certification remain CP12.
 
 ### CP9 - Research Capture System
 
@@ -895,6 +925,8 @@ Deliverables:
 
 Exit: supported capture paths produce recoverable artifacts and Evidence without destabilizing core workflows.
 
+Status: **CP9 PASS (validated 2026-09-09).** Schema v10, source/permission lifecycle, explicit consent and persistent indication, bounded segmented persistence, recovery, marker/range Evidence without media duplication, screenshot/file/web/browser capture, active Research Session attachment, source-preserving derivation contracts, Tauri/React capture and review UI, v9→v10 migration, adversarial acceptance tests, and target-hardware benchmark evidence are recorded in `docs/cp9/`. Live Windows/device/codec/install/long-duration certification remains CP12.
+
 ### CP10 - Checkpoint & Context Engine
 
 Purpose: make work resumable and context-efficient.
@@ -902,12 +934,15 @@ Purpose: make work resumable and context-efficient.
 Deliverables:
 
 - semantic Checkpoints and current project state;
+- capture-aware bookmark state using stable session/segment/marker/Evidence IDs and only the latest persisted fragment boundary;
 - checkpoint comparison and staleness;
 - progressive retrieval;
 - provider-neutral, budgeted, privacy-filtered Context Packs with declared token-estimate method and uncertainty;
 - context quality and token-efficiency evaluations.
 
 Exit: a user and AI can resume curated pilot tasks from a Context Pack with traceable sources and within declared budgets.
+
+Status: **CP10 PASS (validated 2026-09-10).** Schema v11, immutable scope-aware semantic Checkpoints, exact source/repository/capture boundaries, Then/Since/Now/Next state, Checkpoint freshness/comparison, deterministic progressive retrieval, audience/secret/budget enforcement, local review/removal, atomic saved Context Packs with GeneratedArtifact linkage, legacy compatibility, desktop integration, v10→v11 migration, acceptance tests, and target-hardware benchmark evidence are recorded in `docs/cp10/`. MCP client grants/transport were assigned to CP11 and are now implemented; optional embeddings remain off pending a separate evidence-backed decision.
 
 ### CP11 - AI Continuity Interface
 
@@ -924,6 +959,8 @@ Deliverables:
 
 Exit: supported MCP clients can perform the approved read/resume and proposal workflows without database/filesystem access, cross-project leakage, direct canonical writes, or privacy bypass.
 
+Status: **CP11 PASS (validated 2026-09-10).** Schema v12, first-party local STDIO MCP server, negotiated lifecycle, frozen v1 tool/resource/prompt catalog, project-scoped expiring grants, one-time tokens with digest-only persistence, per-request authorization/rate/size/privacy checks, sanitized audit, immediate revocation, immutable review-gated proposals, desktop access/review UI, Codex/Claude Code/Gemini CLI fixtures, v11→v12 migration, adversarial acceptance tests, and target-device benchmark evidence are recorded in `docs/cp11/`. Streamable HTTP remains disabled; CP12 owns live release-client/cross-OS certification, packaging, process supervision/soak, and final release security evidence.
+
 ### CP12 - Hardening & Release
 
 Purpose: reach pilot/release quality.
@@ -938,6 +975,8 @@ Deliverables:
 
 Exit: MVP exit criteria are met on the reference hardware, release blockers are closed, and known limitations are documented.
 
+Status: **CP12 PASS for Linux pilot scope (validated 2026-09-12).** Version 0.12.0 adds create/open/restore onboarding, direct Research Question and bounded read-only Git/code-intelligence entry actions, diagnostics, backup/export/restore, semantic-color React Flow and Mermaid diagrams, AppImage/deb packaging, integrated reference-device benchmark evidence, and final regression/security/license checks. Formal Windows 11 certification, signed distribution/update, live then-current provider/client/device matrices, and Standard 50k/150k stress certification remain explicit qualification gates and are not falsely claimed by the local Linux pilot. Evidence is recorded in `docs/cp12/`.
+
 ## 18. Dependencies
 
 ### 18.1 Confirmed architectural dependencies
@@ -949,9 +988,11 @@ Exit: MVP exit criteria are met on the reference hardware, release blockers are 
 - language/package-specific dependency and configuration analyzers.
 - test parsers for supported frameworks.
 - pluggable model-provider APIs behind the AI Provider Gateway; initial candidates include Gemini, OpenAI, Anthropic, OpenRouter, DeepSeek, and BytePlus ModelArk.
-- MCP protocol implementation for the CP11 Continuum MCP Server.
+- MCP protocol implementation for the CP11 Continuum MCP Server (`continuum-mcp`); no third-party server owns Continuum domain authority.
 - React Flow for interactive graph presentation.
 - ELK for graph/diagram layout.
+- Mermaid behind a pinned, schema-controlled renderer adapter for bounded portable diagrams.
+- semantic HTML/CSS and pinned local interactive assets for in-app and offline Human Documentation; no required CDN or hosted report runtime.
 - operating-system capture APIs and media codecs/backends for screen/audio capture.
 
 ### 18.2 Dependency policies
@@ -1024,7 +1065,7 @@ Mitigation: stable Continuum IDs, immutable observations, explicit supersession/
 
 Impact: medium. Likelihood: high.
 
-Mitigation: bind outputs to checkpoint/ledger position, show freshness, preserve citations, and require regeneration or explicit acknowledgment.
+Mitigation: bind outputs to checkpoint/ledger position, Human Document/renderer/template versions, show freshness and omissions, preserve citations across renderers, and require regeneration or explicit acknowledgment.
 
 ### R-09: External dependency/provider changes
 
@@ -1074,7 +1115,7 @@ All former CP1 open questions have been resolved or explicitly assigned as non-b
 
 Decisions required by CP2 are locked: Windows-first Tauri/React/Rust desktop architecture, SQLite current state plus audit/outbox, UUIDv7 identity, content-addressed Artifact Store, modular Spaces, explicit provenance/origin, scope-aware Checkpoints, deterministic canonical authority, local-first privacy, and reference-hardware performance budgets.
 
-Exact provider/model support and routing defaults belong to CP7; capture backend validation to CP9; optional embeddings to CP10; and the final MCP resource/prompt/tool catalog plus remote-transport decision to CP11. These choices are constrained by CP1 invariants and ADR-006 and do not reopen CP2 or CP3.
+Exact provider/model support and routing defaults belong to CP7; the capture adapter contract belongs to CP9 with release-platform certification in CP12; optional embeddings belong to CP10; and the final MCP resource/prompt/tool catalog plus remote-transport decision belongs to CP11. These choices are constrained by CP1 invariants and ADR-006/ADR-008 and do not reopen CP2 or CP3.
 
 ## 21. Acceptance Criteria
 
@@ -1175,14 +1216,39 @@ Each scenario must support Checkpoint and budgeted Context Pack creation, close/
 - AC-CTX-07: Research and Development Checkpoints omit irrelevant mandatory fields rather than filling them with placeholders.
 - AC-CTX-08: Checkpoints can be created before completion and never imply that the project or workflow has ended.
 
-### 21.10 Performance acceptance criteria
+### 21.10 Visual and Human Documentation acceptance criteria
+
+- AC-VIS-01: Research-only, Development-only, and Connected R&D fixtures render as concise HTML reports without requiring raw Markdown reading.
+- AC-VIS-02: Every material displayed claim resolves to a source entity or is visibly marked as inference, uncertainty, external origin, or unknown.
+- AC-VIS-03: Compact overview presentation preserves access to complete details, citations, omissions, privacy warnings, and staleness reasons.
+- AC-VIS-04: Offline HTML export opens with networking disabled and requires no Continuum server, CDN, remote font, or remote script.
+- AC-VIS-05: Stored-XSS, unsafe URL, markup, Mermaid-label, repository-content, and model-output fixtures cannot execute arbitrary code or obtain ambient authority.
+- AC-VIS-06: HTML and Markdown projections from the same source bundle contain semantically equivalent material facts, status, citations, uncertainty, and omissions.
+- AC-VIS-07: Knowledge graphs support bounded pan, zoom, focus, filtering, expansion, and a source-backed textual alternative.
+- AC-VIS-08: Keyboard, semantic structure, contrast, zoom/reflow, reduced-motion, and accessible table/diagram checks pass for supported report templates.
+
+### 21.11 Research Capture acceptance criteria
+
+- AC-CAP-01: Screen, system-audio, and microphone combinations use declared runtime capabilities and independently observed explicit grants.
+- AC-CAP-02: Selecting a screen never implies system-audio permission; denied and unavailable sources remain explicit durable states.
+- AC-CAP-03: Every active capture has a persistent indicator, and the indicator is cleared on every terminal or interrupted state.
+- AC-CAP-04: Pause, resume, stop, permission revocation, interruption, cancellation, and failure reject stale versions and illegal lifecycle transitions.
+- AC-CAP-05: Ordered immutable fragments persist idempotently, and already-persisted partial output remains recoverable after project reopen.
+- AC-CAP-06: Queue, fragment, page, metadata, duration, encoding, and preview bounds fail closed before unbounded resource use.
+- AC-CAP-07: Markers and selected segment ranges create source-backed Evidence without duplicating the complete recording.
+- AC-CAP-08: Screenshot, file, browser, and web capture create correctly typed CP3 Evidence and may attach to a valid active Research Session.
+- AC-CAP-09: OCR, transcription, thumbnail, and waveform derivations preserve the immutable original Artifact and record engine/settings provenance.
+- AC-CAP-10: A schema-v9 project upgrades atomically to schema v10, incomplete Evidence publication is diagnosable, and the final integrity scan is healthy.
+- AC-CAP-11: UI tests and production build prove that opening/rendering Continuum never activates a sensor and that bounded backpressure behavior is deterministic.
+
+### 21.12 Performance acceptance criteria
 
 - AC-PERF-01: Performance is measured on the declared reference hardware with fixture version, cold/warm state, and p50/p95 results recorded.
 - AC-PERF-02: Standard interactive targets in Section 14.3 pass or have an approved release exception with mitigation.
 - AC-PERF-03: Heavy indexing and capture remain cancellable and do not cause out-of-memory termination under the defined stress procedure.
 - AC-PERF-04: Graph views beyond the visible-node budget paginate, cluster, or scope rather than freezing the UI.
 
-### 21.11 Security and recovery acceptance criteria
+### 21.13 Security and recovery acceptance criteria
 
 - AC-SEC-01: Credentials are absent from project exports, logs, and the SQLite database.
 - AC-SEC-02: Malformed archives and traversal/symlink fixtures cannot write outside the intended project/import area.
@@ -1193,11 +1259,11 @@ Each scenario must support Checkpoint and budgeted Context Pack creation, close/
 ## 22. Verification Strategy
 
 - Unit tests validate entity invariants, lifecycle transitions, policy rules, budget calculations, and schema validators.
-- Contract tests validate adapters for Git, analyzers, every enabled AI provider profile, capture backends, renderers, and the MCP-based AI Continuity Interface.
+- Contract tests validate adapters for Git, analyzers, every enabled AI provider profile, capture backends, Human Document/diagram renderers, export packaging, and the MCP-based AI Continuity Interface.
 - Integration tests validate SQLite transactions, migrations, Artifact Store consistency, event/projection behavior, and import/export.
-- Golden-fixture tests validate parsers, provenance chains, checkpoint summaries, Context Pack selection, and report citations.
+- Golden-fixture tests validate parsers, provenance chains, checkpoint summaries, Context Pack selection, report citations/freshness/omissions, and semantic parity across HTML and Markdown projections.
 - Property/fuzz tests target graph constraints, import formats, paths/archives, schema migrations, and idempotent ingestion.
-- Security tests cover prompt injection, secret leakage, path traversal, authorization, untrusted content, and oversized inputs.
+- Security tests cover prompt injection, secret leakage, path traversal, authorization, stored HTML/diagram injection, unsafe URLs, untrusted content, and oversized inputs.
 - Performance tests use named fixtures and reference hardware, reporting p50/p95 and peak memory.
 - Recovery tests simulate process termination during writes, indexing, capture, migration, and export.
 - End-to-end tests exercise the complete scenario in Section 21.1 with AI enabled and disabled.
@@ -1264,6 +1330,10 @@ A release candidate requires:
 **Finding:** An interpreted conclusion grounded in Evidence and/or Results.
 
 **GeneratedArtifact:** Versioned report, diagram, explanation, summary, or other output produced deterministically or with AI assistance.
+
+**Human Document Model:** Renderer-neutral, versioned semantic report containing scope, source boundary, freshness, privacy/omission metadata, blocks, citations, diagrams, and artifact references.
+
+**Human Documentation:** The concise website-like HTML experience used to read Research, Development, Integrated R&D, architecture, timeline, and handover information; it is a projection, not canonical truth.
 
 **Ledger position:** Stable marker identifying the included boundary of project history for a checkpoint or generated output.
 

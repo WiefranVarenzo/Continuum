@@ -24,7 +24,7 @@ CP4 implements a deterministic, local-first Development Space on CP2/CP3. Develo
 - reachable-commit and same-Repository validation;
 - explicit ChangeSet supersession and typed Requirement implementation links;
 - immutable Development timeline and deterministic search projection;
-- Development Checkpoint, live divergence-aware resume, and local report;
+- Development Checkpoint, live divergence-aware resume, and deterministic local report retained as the ADR-007 compatibility/content baseline;
 - Development-aware integrity diagnostics;
 - schema v4 migration with v1/v2/v3 backup and preservation tests.
 
@@ -51,4 +51,4 @@ crates/continuum-core/
 
 ## Explicit Non-Claims
 
-CP4 does not parse ASTs, discover symbols/dependencies/configurations/tests, run tests, calculate semantic similarity, invoke model providers, capture media, produce styled visual documentation, build semantic Context Packs, expose MCP, or certify Windows/release stress. These remain CP5–CP12 responsibilities.
+CP4 does not parse ASTs, discover symbols/dependencies/configurations/tests, run tests, calculate semantic similarity, invoke model providers, capture media, produce HTML-first Human Documentation/styled visual documentation, build semantic Context Packs, expose MCP, or certify Windows/release stress. These remain CP5–CP12 responsibilities. ADR-007 introduces no CP4 data migration and does not invalidate the tested local report.

@@ -134,7 +134,7 @@ A Research Checkpoint is an immutable bookmark at an exact pre-event ledger posi
 
 The CP3 report is generated locally without AI. It includes Questions, Evidence summaries and stable references, Experiments, Results, Finding claims with typed source IDs, Decisions with rationale, optional Requirements, exact project ID, and source ledger sequence. User-controlled text is bounded, flattened, HTML-escaped, and truncated in the projection. Original Evidence payload is not copied into the report by default.
 
-CP8 may add styled, saved, and diagram-aware report projections without changing CP3 canonical records.
+The implemented Markdown report remains a deterministic compatibility projection and golden content baseline. CP8 now adapts the same scoped facts and citations into a versioned Human Document Model, safe HTML-first Research Report, and Markdown compatibility output without changing CP3 canonical records or granting HTML/model output authority.
 
 ## 10. Privacy and Resource Controls
 
@@ -157,6 +157,6 @@ CP4 may attach a repository and link ChangeSets to the stable Requirement record
 - captured screenshot/audio/recording acquisition adapters: CP9; CP3 already accepts their stable Artifact references and capture metadata.
 - semantic retrieval and full Context Pack selection: CP10.
 - Git and ChangeSet behavior: CP4.
-- polished visual reports/diagrams: CP8.
+- HTML-first Human Documentation, Human Document schema, offline HTML export, styled visual reports, and diagrams: CP8.
 
 These are deferred services, not missing CP3 canonical behavior.

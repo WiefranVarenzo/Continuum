@@ -1,0 +1,24 @@
+{
+  "fixture": "graph-500-v1",
+  "healthy": true,
+  "iterations": 30,
+  "nodes": 500,
+  "one_hop_ms": {
+    "p50": 33.260091,
+    "p95": 38.877241,
+    "target_p95": 300.0
+  },
+  "relationships": 1497,
+  "scoped_500_node_ms": {
+    "p50": 205.93654,
+    "p95": 232.195252,
+    "query_only_target_p95": 2000.0
+  },
+  "validation_ms": 111.594177,
+  "measured_at": "2026-09-08",
+  "command": "cargo run --release --example cp6_benchmark",
+  "notes": [
+    "The scoped target is a query-only precursor to CP8's render target; browser layout/render time is not measured by CP6.",
+    "Measurements were taken on the active development host and do not replace CP12 reference-hardware certification."
+  ]
+}

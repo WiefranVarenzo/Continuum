@@ -35,6 +35,7 @@ const MAX_TOTAL_BYTES_HARD: usize = 512 * 1024 * 1024;
 const MAX_ENTITIES_HARD: usize = 200_000;
 const MAX_TEST_RESULTS: usize = 20_000;
 const MAX_JSON_BYTES: usize = 1024 * 1024;
+const ANALYZER_CACHE_MAX_BYTES: i64 = 256 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AnalysisLimits {
@@ -1355,6 +1356,8 @@ fn persist_analysis(
     prepared: PreparedAnalysis,
 ) -> Result<AnalysisRunRecord> {
     let project_id = &store.manifest().project_id;
+    let apply_current_projection =
+        is_current_repository_baseline(&tx, repository_id, &baseline.entity.id)?;
     let run_id = new_id();
     let projected_count = estimate_entity_count(&prepared);
     if projected_count > limits.max_entities {
@@ -1408,16 +1411,40 @@ fn persist_analysis(
     )?;
     for (hash, language, output_json) in &prepared.cache_entries {
         tx.execute(
-            "INSERT OR IGNORE INTO analyzer_cache(content_sha256,language,analyzer_id,analyzer_version,
-                output_schema_version,output_json,created_at)
-             VALUES(?1,?2,'code-intelligence-file',?3,?4,?5,?6)",
-            params![hash,language,FILE_ANALYSIS_CACHE_VERSION,OUTPUT_SCHEMA_VERSION,output_json,completed_at],
+            "INSERT INTO analyzer_cache(content_sha256,language,analyzer_id,analyzer_version,
+                output_schema_version,output_json,byte_size,created_at,last_accessed_at)
+             VALUES(?1,?2,'code-intelligence-file',?3,?4,?5,?6,?7,?7)
+             ON CONFLICT(content_sha256,language,analyzer_id,analyzer_version,output_schema_version)
+             DO UPDATE SET last_accessed_at=excluded.last_accessed_at",
+            params![
+                hash,
+                language,
+                FILE_ANALYSIS_CACHE_VERSION,
+                OUTPUT_SCHEMA_VERSION,
+                output_json,
+                output_json.len() as i64,
+                completed_at
+            ],
         )?;
     }
+    enforce_analyzer_cache_budget(&tx)?;
     let mut code_ids = HashSet::new();
     let mut test_ids = HashSet::new();
     let mut file_ids = HashMap::new();
-    for file in &prepared.files {
+    let current_file_hashes = prepared
+        .files
+        .iter()
+        .map(|file| (file.path.clone(), file.content_sha256.clone()))
+        .collect::<HashMap<_, _>>();
+    let rename_destinations =
+        rename_destinations_first_observed_at_baseline(&tx, repository_id, &baseline.entity.id)?;
+    let mut ordered_files = prepared.files.iter().collect::<Vec<_>>();
+    ordered_files.sort_by(|left, right| {
+        let left_rank = !rename_destinations.contains(&left.path);
+        let right_rank = !rename_destinations.contains(&right.path);
+        left_rank.cmp(&right_rank).then(left.path.cmp(&right.path))
+    });
+    for file in ordered_files {
         let file_id = upsert_code_entity(
             &tx,
             project_id,
@@ -1430,6 +1457,8 @@ fn persist_analysis(
             file.output.language.as_deref(),
             Some((&file.path, "path")),
             Some(&file.content_sha256),
+            Some(&current_file_hashes),
+            apply_current_projection,
             completed_at,
         )?;
         file_ids.insert(file.path.clone(), file_id.clone());
@@ -1482,6 +1511,8 @@ fn persist_analysis(
                 file.output.language.as_deref(),
                 None,
                 None,
+                None,
+                apply_current_projection,
                 completed_at,
             )?;
             code_ids.insert(symbol_id.clone());
@@ -1541,6 +1572,8 @@ fn persist_analysis(
                 None,
                 None,
                 None,
+                None,
+                apply_current_projection,
                 completed_at,
             )?;
             code_ids.insert(dependency_id.clone());
@@ -1587,7 +1620,7 @@ fn persist_analysis(
             )?;
         }
         if let Some(configuration) = &file.output.configuration {
-            let stable_key = format!("configuration:{}", file.path);
+            let stable_key = format!("configuration:{file_id}");
             let configuration_id = upsert_code_entity(
                 &tx,
                 project_id,
@@ -1600,6 +1633,8 @@ fn persist_analysis(
                 None,
                 None,
                 None,
+                None,
+                apply_current_projection,
                 completed_at,
             )?;
             code_ids.insert(configuration_id.clone());
@@ -1654,6 +1689,7 @@ fn persist_analysis(
                 &test.name,
                 &test.framework,
                 &test.test_kind,
+                apply_current_projection,
                 completed_at,
             )?;
             test_ids.insert(test_id.clone());
@@ -1792,16 +1828,18 @@ fn persist_analysis(
             "deterministic analyzer identity count changed during persistence".into(),
         ));
     }
-    let _ = mark_unobserved_code_intelligence(
-        &tx,
-        project_id,
-        command,
-        repository_id,
-        &baseline.entity.id,
-        &code_ids,
-        &test_ids,
-        completed_at,
-    )?;
+    if apply_current_projection {
+        let _ = mark_unobserved_code_intelligence(
+            &tx,
+            project_id,
+            command,
+            repository_id,
+            &baseline.entity.id,
+            &code_ids,
+            &test_ids,
+            completed_at,
+        )?;
+    }
     upsert_development_search(
         &tx,
         project_id,
@@ -1868,76 +1906,132 @@ fn upsert_code_entity(
     language: Option<&str>,
     alias: Option<(&str, &str)>,
     content_hash_for_rename: Option<&str>,
+    current_file_hashes: Option<&HashMap<String, String>>,
+    apply_current_projection: bool,
     now: &str,
 ) -> Result<String> {
-    let mut id: Option<String> = tx
-        .query_row(
-            "SELECT entity_id FROM code_entities
-             WHERE repository_id=?1 AND entity_kind=?2 AND stable_key=?3",
-            params![repository_id, kind, stable_key],
-            |row| row.get(0),
-        )
-        .optional()?;
+    let mut renamed_from: Option<String> = None;
+    let mut id: Option<String> = None;
+    if kind == "file"
+        && let (Some((new_path, "path")), Some(hash)) = (alias, content_hash_for_rename)
+    {
+        let rename: Option<(String, String, String)> = tx
+            .query_row(
+                "SELECT cea.code_entity_id,fc.old_path,fc.change_kind
+                 FROM git_commit_file_changes fc
+                 JOIN git_commit_observations co ON co.entity_id=fc.commit_entity_id
+                 JOIN code_entity_aliases cea ON cea.repository_id=co.repository_id
+                    AND cea.alias_kind='path' AND cea.alias_value=fc.old_path
+                    AND cea.retired_at_baseline_id IS NULL
+                 JOIN code_entity_observations ceo ON ceo.code_entity_id=cea.code_entity_id
+                    AND ceo.content_sha256=?3
+                 WHERE co.repository_id=?1 AND fc.change_kind IN ('renamed','copied')
+                   AND fc.new_path=?2
+                 ORDER BY co.committed_at DESC,ceo.observed_at DESC LIMIT 1",
+                params![repository_id, new_path, hash],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()?;
+        if let Some((rename_id, old_path, change_kind)) = rename {
+            let old_path_reused_with_other_content = current_file_hashes
+                .and_then(|files| files.get(&old_path))
+                .is_some_and(|current_hash| current_hash != hash);
+            if change_kind == "renamed" || old_path_reused_with_other_content {
+                id = Some(rename_id);
+                renamed_from = Some(old_path);
+            }
+        }
+    }
     if id.is_none()
+        && apply_current_projection
         && let Some((alias_value, alias_kind)) = alias
     {
         id = tx
             .query_row(
                 "SELECT code_entity_id FROM code_entity_aliases
-                 WHERE repository_id=?1 AND alias_kind=?2 AND alias_value=?3",
+                 WHERE repository_id=?1 AND alias_kind=?2 AND alias_value=?3
+                   AND retired_at_baseline_id IS NULL",
                 params![repository_id, alias_kind, alias_value],
+                |row| row.get(0),
+            )
+            .optional()?;
+    }
+    if id.is_none() && kind != "file" {
+        id = tx
+            .query_row(
+                "SELECT entity_id FROM code_entities
+                 WHERE repository_id=?1 AND entity_kind=?2 AND stable_key=?3",
+                params![repository_id, kind, stable_key],
                 |row| row.get(0),
             )
             .optional()?;
     }
     if id.is_none()
         && kind == "file"
-        && let (Some((new_path, "path")), Some(hash)) = (alias, content_hash_for_rename)
+        && let (Some((alias_value, "path")), Some(hash)) = (alias, content_hash_for_rename)
     {
+        // Content corroboration prevents a historical analysis or restored
+        // path from inheriting an unrelated file's identity.
         id = tx
             .query_row(
-                "SELECT cea.code_entity_id FROM git_commit_file_changes fc
-                 JOIN git_commit_observations co ON co.entity_id=fc.commit_entity_id
-                 JOIN code_entity_aliases cea ON cea.repository_id=co.repository_id
-                    AND cea.alias_kind='path' AND cea.alias_value=fc.old_path
+                "SELECT cea.code_entity_id FROM code_entity_aliases cea
                  JOIN code_entity_observations ceo ON ceo.code_entity_id=cea.code_entity_id
-                    AND ceo.content_sha256=?3
-                 WHERE co.repository_id=?1 AND fc.change_kind='renamed' AND fc.new_path=?2
-                 ORDER BY co.committed_at DESC,ceo.observed_at DESC LIMIT 1",
-                params![repository_id, new_path, hash],
+                 WHERE cea.repository_id=?1 AND cea.alias_kind='path' AND cea.alias_value=?2
+                   AND ceo.content_sha256=?3
+                 ORDER BY ceo.observed_at DESC LIMIT 1",
+                params![repository_id, alias_value, hash],
                 |row| row.get(0),
             )
             .optional()?;
     }
     if let Some(id) = id {
-        tx.execute(
-            "UPDATE entities SET title=?3,status='active',version=version+1,updated_at=?4,updated_by=?5,
-                data_json=?6 WHERE id=?1 AND project_id=?2 AND entity_type='code_entity'",
-            params![
-                id,
-                project_id,
-                title,
-                now,
-                command.actor.id,
-                bounded_json(
-                    &json!({"stable_key":stable_key,"presence":"present",
-                        "last_observed_baseline_id":baseline_id}),
-                    MAX_JSON_BYTES,
-                    "CodeEntity current data"
-                )?
-            ],
-        )?;
-        if let Some((alias_value, alias_kind)) = alias {
+        if apply_current_projection {
             tx.execute(
-                "INSERT OR IGNORE INTO code_entity_aliases(repository_id,alias_kind,alias_value,
-                    code_entity_id,first_seen_baseline_id) VALUES(?1,?2,?3,?4,?5)",
-                params![repository_id, alias_kind, alias_value, id, baseline_id],
+                "UPDATE entities SET title=?3,status='active',version=version+1,updated_at=?4,updated_by=?5,
+                    data_json=?6 WHERE id=?1 AND project_id=?2 AND entity_type='code_entity'",
+                params![
+                    id,
+                    project_id,
+                    title,
+                    now,
+                    command.actor.id,
+                    bounded_json(
+                        &json!({"stable_key":stable_key,"presence":"present",
+                            "last_observed_baseline_id":baseline_id}),
+                        MAX_JSON_BYTES,
+                        "CodeEntity current data"
+                    )?
+                ],
             )?;
+            if let Some(old_path) = renamed_from {
+                tx.execute(
+                    "UPDATE code_entity_aliases SET last_seen_baseline_id=?4,
+                        retired_at_baseline_id=?4
+                     WHERE repository_id=?1 AND alias_kind='path' AND alias_value=?2
+                       AND code_entity_id=?3 AND retired_at_baseline_id IS NULL",
+                    params![repository_id, old_path, id, baseline_id],
+                )?;
+            }
+            if let Some((alias_value, alias_kind)) = alias {
+                activate_code_entity_alias(
+                    tx,
+                    repository_id,
+                    alias_kind,
+                    alias_value,
+                    &id,
+                    baseline_id,
+                )?;
+            }
+            upsert_development_search(tx, project_id, &id, "code_entity", title, stable_key, now)?;
         }
-        upsert_development_search(tx, project_id, &id, "code_entity", title, stable_key, now)?;
         return Ok(id);
     }
     let id = new_id();
+    let effective_stable_key = if kind == "file" {
+        format!("file:{id}")
+    } else {
+        stable_key.to_owned()
+    };
     insert_common_entity(
         tx,
         project_id,
@@ -1945,27 +2039,95 @@ fn upsert_code_entity(
         &id,
         "code_entity",
         title,
-        "active",
+        if apply_current_projection {
+            "active"
+        } else {
+            "unavailable"
+        },
         OriginKind::Deterministic,
         "{}",
-        &json!({"stable_key":stable_key,"presence":"present",
-            "last_observed_baseline_id":baseline_id}),
+        &if apply_current_projection {
+            json!({"stable_key":effective_stable_key,"presence":"present",
+                "last_observed_baseline_id":baseline_id})
+        } else {
+            json!({"stable_key":effective_stable_key,"presence":"historical",
+                "historical_baseline_id":baseline_id})
+        },
         now,
     )?;
     tx.execute(
         "INSERT INTO code_entities(entity_id,project_id,repository_id,entity_kind,stable_key,language,
             first_seen_baseline_id) VALUES(?1,?2,?3,?4,?5,?6,?7)",
-        params![id, project_id, repository_id, kind, stable_key, language, baseline_id],
+        params![id, project_id, repository_id, kind, effective_stable_key, language, baseline_id],
     )?;
-    if let Some((alias_value, alias_kind)) = alias {
-        tx.execute(
-            "INSERT INTO code_entity_aliases(repository_id,alias_kind,alias_value,code_entity_id,
-                first_seen_baseline_id) VALUES(?1,?2,?3,?4,?5)",
-            params![repository_id, alias_kind, alias_value, id, baseline_id],
-        )?;
+    if apply_current_projection && let Some((alias_value, alias_kind)) = alias {
+        activate_code_entity_alias(tx, repository_id, alias_kind, alias_value, &id, baseline_id)?;
     }
-    upsert_development_search(tx, project_id, &id, "code_entity", title, stable_key, now)?;
+    upsert_development_search(
+        tx,
+        project_id,
+        &id,
+        "code_entity",
+        title,
+        &effective_stable_key,
+        now,
+    )?;
     Ok(id)
+}
+
+fn activate_code_entity_alias(
+    tx: &Transaction<'_>,
+    repository_id: &str,
+    alias_kind: &str,
+    alias_value: &str,
+    code_entity_id: &str,
+    baseline_id: &str,
+) -> Result<()> {
+    tx.execute(
+        "UPDATE code_entity_aliases SET last_seen_baseline_id=?4,retired_at_baseline_id=?4
+         WHERE repository_id=?1 AND alias_kind=?2 AND alias_value=?3
+           AND code_entity_id<>?5 AND retired_at_baseline_id IS NULL",
+        params![
+            repository_id,
+            alias_kind,
+            alias_value,
+            baseline_id,
+            code_entity_id
+        ],
+    )?;
+    tx.execute(
+        "INSERT INTO code_entity_aliases(repository_id,alias_kind,alias_value,code_entity_id,
+            first_seen_baseline_id,last_seen_baseline_id,retired_at_baseline_id)
+         VALUES(?1,?2,?3,?4,?5,?5,NULL)
+         ON CONFLICT(repository_id,alias_kind,alias_value,code_entity_id)
+         DO UPDATE SET last_seen_baseline_id=excluded.last_seen_baseline_id,
+                       retired_at_baseline_id=NULL",
+        params![
+            repository_id,
+            alias_kind,
+            alias_value,
+            code_entity_id,
+            baseline_id
+        ],
+    )?;
+    Ok(())
+}
+
+fn rename_destinations_first_observed_at_baseline(
+    connection: &Connection,
+    repository_id: &str,
+    baseline_id: &str,
+) -> Result<HashSet<String>> {
+    let mut statement = connection.prepare(
+        "SELECT DISTINCT fc.new_path FROM git_commit_file_changes fc
+         JOIN git_commit_observations co ON co.entity_id=fc.commit_entity_id
+         WHERE co.repository_id=?1 AND co.first_observed_baseline_id=?2
+           AND fc.change_kind IN ('renamed','copied')",
+    )?;
+    statement
+        .query_map(params![repository_id, baseline_id], |row| row.get(0))?
+        .collect::<std::result::Result<HashSet<_>, _>>()
+        .map_err(Into::into)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2017,6 +2179,7 @@ fn upsert_test(
     title: &str,
     framework: &str,
     test_kind: &str,
+    apply_current_projection: bool,
     now: &str,
 ) -> Result<String> {
     if let Some(id) = tx
@@ -2027,7 +2190,8 @@ fn upsert_test(
         )
         .optional()?
     {
-        tx.execute(
+        if apply_current_projection {
+            tx.execute(
             "UPDATE entities SET title=?3,status='active',version=version+1,updated_at=?4,updated_by=?5,
                 data_json=?6 WHERE id=?1 AND project_id=?2 AND entity_type='test'",
             params![
@@ -2043,16 +2207,17 @@ fn upsert_test(
                     "Test current data"
                 )?
             ],
-        )?;
-        upsert_development_search(
-            tx,
-            project_id,
-            &id,
-            "test",
-            title,
-            &format!("{framework} {test_kind}"),
-            now,
-        )?;
+            )?;
+            upsert_development_search(
+                tx,
+                project_id,
+                &id,
+                "test",
+                title,
+                &format!("{framework} {test_kind}"),
+                now,
+            )?;
+        }
         return Ok(id);
     }
     let id = new_id();
@@ -2063,11 +2228,20 @@ fn upsert_test(
         &id,
         "test",
         title,
-        "active",
+        if apply_current_projection {
+            "active"
+        } else {
+            "unavailable"
+        },
         OriginKind::Deterministic,
         "{}",
-        &json!({"stable_key":stable_key,"presence":"present",
-            "last_observed_baseline_id":baseline_id}),
+        &if apply_current_projection {
+            json!({"stable_key":stable_key,"presence":"present",
+                "last_observed_baseline_id":baseline_id})
+        } else {
+            json!({"stable_key":stable_key,"presence":"historical",
+                "historical_baseline_id":baseline_id})
+        },
         now,
     )?;
     tx.execute(
@@ -2104,6 +2278,7 @@ fn reapply_analysis_projection(
     baseline_id: &str,
 ) -> Result<AnalysisRunRecord> {
     require_development_enabled(&tx, &store.manifest().project_id)?;
+    let apply_current_projection = is_current_repository_baseline(&tx, repository_id, baseline_id)?;
     let code_ids = tx
         .prepare(
             "SELECT DISTINCT code_entity_id FROM code_entity_observations
@@ -2119,27 +2294,31 @@ fn reapply_analysis_projection(
         .query_map([run_id], |row| row.get::<_, String>(0))?
         .collect::<std::result::Result<HashSet<_>, _>>()?;
     let now = Utc::now().to_rfc3339();
-    let mut changed = reactivate_observed_entities(
-        &tx,
-        &store.manifest().project_id,
-        command,
-        baseline_id,
-        &code_ids,
-        &test_ids,
-        &now,
-    )?;
-    changed += mark_unobserved_code_intelligence(
-        &tx,
-        &store.manifest().project_id,
-        command,
-        repository_id,
-        baseline_id,
-        &code_ids,
-        &test_ids,
-        &now,
-    )?;
+    let mut changed = 0;
+    if apply_current_projection {
+        changed = reactivate_observed_entities(
+            &tx,
+            &store.manifest().project_id,
+            command,
+            baseline_id,
+            &code_ids,
+            &test_ids,
+            &now,
+        )?;
+        changed += mark_unobserved_code_intelligence(
+            &tx,
+            &store.manifest().project_id,
+            command,
+            repository_id,
+            baseline_id,
+            &code_ids,
+            &test_ids,
+            &now,
+        )?;
+    }
     let payload = json!({"reused":true,"analysis_run_id":run_id,
         "repository_id":repository_id,"baseline_id":baseline_id,
+        "applied_current_projection":apply_current_projection,
         "projection_changes":changed});
     if changed > 0 {
         let sequence = append_event_with_context(
@@ -2304,6 +2483,15 @@ fn mark_unobserved_code_intelligence(
                 entity_type
             ],
         )?;
+        if entity_type == "code_entity" {
+            tx.execute(
+                "UPDATE code_entity_aliases SET last_seen_baseline_id=?3,
+                    retired_at_baseline_id=?3
+                 WHERE repository_id=?1 AND code_entity_id=?2
+                   AND alias_kind='path' AND retired_at_baseline_id IS NULL",
+                params![repository_id, id, baseline_id],
+            )?;
+        }
     }
     Ok(changed)
 }
@@ -2364,6 +2552,7 @@ fn link_change_sets_to_files(
             .or(resolve_file_entity_id(
                 tx,
                 repository_id,
+                baseline_id,
                 &new_path,
                 old_path.as_deref(),
             )?);
@@ -2416,9 +2605,13 @@ pub(crate) fn link_change_set_to_known_code_entities(
         .collect::<std::result::Result<Vec<_>, _>>()?;
     drop(statement);
     for (old_path, new_path) in changes {
-        if let Some(code_entity_id) =
-            resolve_file_entity_id(tx, repository_id, &new_path, old_path.as_deref())?
-        {
+        if let Some(code_entity_id) = resolve_file_entity_id(
+            tx,
+            repository_id,
+            baseline_id,
+            &new_path,
+            old_path.as_deref(),
+        )? {
             insert_relationship_if_absent(
                 tx,
                 project_id,
@@ -2439,16 +2632,45 @@ pub(crate) fn link_change_set_to_known_code_entities(
 fn resolve_file_entity_id(
     connection: &Connection,
     repository_id: &str,
+    baseline_id: &str,
     new_path: &str,
     old_path: Option<&str>,
 ) -> Result<Option<String>> {
     for path in std::iter::once(new_path).chain(old_path) {
         if let Some(id) = connection
             .query_row(
+                "SELECT ceo.code_entity_id FROM code_entity_observations ceo
+                 JOIN code_entities ce ON ce.entity_id=ceo.code_entity_id
+                 WHERE ce.repository_id=?1 AND ce.entity_kind='file'
+                   AND ceo.baseline_id=?2 AND ceo.source_path=?3
+                 ORDER BY ceo.observed_at DESC LIMIT 1",
+                params![repository_id, baseline_id, path],
+                |row| row.get(0),
+            )
+            .optional()?
+        {
+            return Ok(Some(id));
+        }
+        if let Some(id) = connection
+            .query_row(
                 "SELECT cea.code_entity_id FROM code_entity_aliases cea
                  JOIN code_entities ce ON ce.entity_id=cea.code_entity_id
                  WHERE cea.repository_id=?1 AND cea.alias_kind='path' AND cea.alias_value=?2
-                   AND ce.entity_kind='file'",
+                   AND cea.retired_at_baseline_id=?3 AND ce.entity_kind='file'
+                 ORDER BY cea.code_entity_id LIMIT 1",
+                params![repository_id, path, baseline_id],
+                |row| row.get(0),
+            )
+            .optional()?
+        {
+            return Ok(Some(id));
+        }
+        if let Some(id) = connection
+            .query_row(
+                "SELECT cea.code_entity_id FROM code_entity_aliases cea
+                 JOIN code_entities ce ON ce.entity_id=cea.code_entity_id
+                 WHERE cea.repository_id=?1 AND cea.alias_kind='path' AND cea.alias_value=?2
+                   AND cea.retired_at_baseline_id IS NULL AND ce.entity_kind='file'",
                 params![repository_id, path],
                 |row| row.get(0),
             )
@@ -2603,6 +2825,48 @@ fn existing_analysis_run(
         .map_err(Into::into)
 }
 
+fn is_current_repository_baseline(
+    connection: &Connection,
+    repository_id: &str,
+    baseline_id: &str,
+) -> Result<bool> {
+    let current: Option<String> = connection
+        .query_row(
+            "SELECT current_baseline_id FROM repository_reconciliations
+             WHERE repository_id=?1 ORDER BY observed_at DESC,id DESC LIMIT 1",
+            [repository_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(current.as_deref() == Some(baseline_id))
+}
+
+fn enforce_analyzer_cache_budget(connection: &Connection) -> Result<()> {
+    let mut total: i64 = connection.query_row(
+        "SELECT COALESCE(sum(byte_size),0) FROM analyzer_cache",
+        [],
+        |row| row.get(0),
+    )?;
+    while total > ANALYZER_CACHE_MAX_BYTES {
+        let removed = connection.execute(
+            "DELETE FROM analyzer_cache WHERE rowid IN (
+                SELECT rowid FROM analyzer_cache
+                ORDER BY last_accessed_at,created_at,content_sha256 LIMIT 128
+             )",
+            [],
+        )?;
+        if removed == 0 {
+            break;
+        }
+        total = connection.query_row(
+            "SELECT COALESCE(sum(byte_size),0) FROM analyzer_cache",
+            [],
+            |row| row.get(0),
+        )?;
+    }
+    Ok(())
+}
+
 fn read_cache(
     connection: &Connection,
     hash: &str,
@@ -2622,6 +2886,21 @@ fn read_cache(
             |row| row.get(0),
         )
         .optional()?;
+    if raw.is_some() {
+        connection.execute(
+            "UPDATE analyzer_cache SET last_accessed_at=?5
+             WHERE content_sha256=?1 AND language=?2
+               AND analyzer_id='code-intelligence-file' AND analyzer_version=?3
+               AND output_schema_version=?4",
+            params![
+                hash,
+                language,
+                FILE_ANALYSIS_CACHE_VERSION,
+                OUTPUT_SCHEMA_VERSION,
+                Utc::now().to_rfc3339()
+            ],
+        )?;
+    }
     raw.map(|value| serde_json::from_str(&value).map_err(Into::into))
         .transpose()
 }
@@ -3409,6 +3688,48 @@ pub(crate) fn append_code_intelligence_integrity_issues(
             code: "analysis_count_mismatch".into(),
             path_or_id: id,
             guidance: "Rebuild the affected analysis from its immutable RepositoryBaseline; do not edit counts manually.".into(),
+        });
+    }
+    let mut statement = connection.prepare(
+        "SELECT id FROM (
+           SELECT ce.entity_id AS id FROM code_entities ce
+             JOIN entities e ON e.id=ce.entity_id
+             WHERE ce.project_id=?1 AND ce.entity_kind='file' AND e.status='active'
+               AND NOT EXISTS(SELECT 1 FROM code_entity_aliases a
+                 WHERE a.code_entity_id=ce.entity_id AND a.alias_kind='path'
+                   AND a.retired_at_baseline_id IS NULL)
+           UNION
+           SELECT a.code_entity_id FROM code_entity_aliases a
+             JOIN code_entities ce ON ce.entity_id=a.code_entity_id
+             JOIN repository_baselines first_rb ON first_rb.entity_id=a.first_seen_baseline_id
+             JOIN repository_baselines last_rb ON last_rb.entity_id=a.last_seen_baseline_id
+             LEFT JOIN repository_baselines retired_rb ON retired_rb.entity_id=a.retired_at_baseline_id
+             WHERE ce.project_id=?1 AND (ce.repository_id<>a.repository_id
+               OR first_rb.repository_id<>a.repository_id
+               OR last_rb.repository_id<>a.repository_id
+               OR (retired_rb.entity_id IS NOT NULL AND retired_rb.repository_id<>a.repository_id))
+         ) ORDER BY id",
+    )?;
+    let ids = statement
+        .query_map([project_id], |row| row.get::<_, String>(0))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    for id in ids {
+        report.issues.push(IntegrityIssue {
+            code: "invalid_code_entity_alias_timeline".into(),
+            path_or_id: id,
+            guidance: "Rebuild temporal file aliases from immutable code observations and CP4 rename evidence; do not reuse an unrelated path identity.".into(),
+        });
+    }
+    let cache_bytes: i64 = connection.query_row(
+        "SELECT COALESCE(sum(byte_size),0) FROM analyzer_cache",
+        [],
+        |row| row.get(0),
+    )?;
+    if cache_bytes > ANALYZER_CACHE_MAX_BYTES {
+        report.issues.push(IntegrityIssue {
+            code: "analyzer_cache_budget_exceeded".into(),
+            path_or_id: cache_bytes.to_string(),
+            guidance: "Evict oldest analyzer-cache rows; canonical AnalysisRuns and observations are unaffected.".into(),
         });
     }
     let mut statement = connection.prepare(

@@ -1,0 +1,19 @@
+{
+  "checkpoint": "CP7",
+  "date": "2026-09-08",
+  "fixture": "semantic-cache-v1",
+  "build": "release",
+  "samples": 30,
+  "provider_network": "fixture/no network; local overhead only",
+  "uncached_local_pipeline_ms": 14.28714,
+  "cached_task_create_and_execute_p50_ms": 18.433135,
+  "cached_task_create_and_execute_p95_ms": 19.771137,
+  "cached_task_create_and_execute_max_ms": 20.071062,
+  "integrity_scan_ms": 7.067922,
+  "correctness": {
+    "cache_hits": 30,
+    "candidate_per_task": true,
+    "canonical_mutations": 0
+  },
+  "interpretation": "Local gateway, validation, and cache overhead is small relative to network/provider latency. Provider latency is intentionally excluded and must be reported per live profile."
+}

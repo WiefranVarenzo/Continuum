@@ -178,3 +178,19 @@ flowchart LR
   Tier4 --> Pack
   Pack --> Privacy[Final Privacy Gate]
 ```
+
+## 12. HTML-First Human Documentation
+
+```mermaid
+flowchart LR
+  Sources[Canonical scoped sources] --> Bundle[Deterministic report source bundle]
+  Bundle --> Model[Versioned Human Document Model]
+  AI[Optional schema-bound AI proposal] --> Validate[Schema + source validation]
+  Validate --> Model
+  Model --> HTML[Safe semantic HTML]
+  Model --> MD[Markdown compatibility]
+  HTML --> Desktop[Desktop report view]
+  HTML --> Export[Offline HTML export]
+  Model --> Simple[Mermaid: bounded diagrams]
+  Model --> Graph[React Flow + ELK: interactive graph]
+```

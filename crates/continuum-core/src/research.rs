@@ -102,6 +102,15 @@ pub struct NewResearchSession {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ResearchSessionUpdate {
+    pub title: String,
+    pub objective: String,
+    #[serde(default)]
+    pub metadata: Value,
+    pub expected_version: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NewResearchQuestion {
     pub title: String,
     pub kind: QuestionKind,
@@ -153,6 +162,15 @@ pub struct NewEvidence {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EvidenceAnnotationUpdate {
+    pub annotation: String,
+    pub summary: String,
+    pub relevance: String,
+    pub expected_version: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct EvidenceDetailsUpdate {
+    pub title: String,
     pub annotation: String,
     pub summary: String,
     pub relevance: String,
@@ -358,6 +376,7 @@ pub(crate) fn validate_registered_relationship_pair(
             "implements" | "partially_implements" | "reverts",
             "requirement"
         ) | ("test", "verifies", "requirement")
+            | ("evidence" | "result", "produces", "learning_feedback")
             | (
                 "learning_feedback",
                 "supports" | "challenges" | "requests_revision_of",
@@ -462,6 +481,100 @@ impl ContinuityStore {
                 Ok(())
             },
         )
+    }
+
+    pub fn update_research_session(
+        &self,
+        command: &CommandContext,
+        entity_id: &str,
+        update: ResearchSessionUpdate,
+    ) -> Result<ResearchItem> {
+        validate_command_context(command)?;
+        validate_nonempty(&update.title, 500, "title")?;
+        validate_nonempty(&update.objective, 10_000, "research objective")?;
+        let metadata = bounded_json(
+            &update.metadata,
+            MAX_RESEARCH_JSON_BYTES,
+            "research metadata",
+        )?;
+        let mut connection = self.connection()?;
+        let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        require_research_enabled(&tx, &self.manifest.project_id)?;
+        if let Some(result) = prior_result(
+            &tx,
+            &self.manifest.project_id,
+            command,
+            "UpdateResearchSession",
+        )? {
+            tx.commit()?;
+            return self.get_research_item(&result.unwrap_or_else(|| entity_id.to_owned()));
+        }
+        let status = research_entity_status(
+            &tx,
+            &self.manifest.project_id,
+            entity_id,
+            "research_session",
+        )?;
+        if status != "active" {
+            return Err(CoreError::Conflict(
+                "only an active research session can be edited".into(),
+            ));
+        }
+        let now = Utc::now().to_rfc3339();
+        let changed = tx.execute(
+            "UPDATE entities SET title=?3,metadata_json=?4,version=version+1,updated_at=?5,updated_by=?6
+             WHERE id=?1 AND project_id=?2 AND version=?7",
+            params![entity_id,self.manifest.project_id,update.title,metadata,now,command.actor.id,update.expected_version],
+        )?;
+        if changed != 1 {
+            return Err(CoreError::Conflict(
+                "research session version is stale or missing".into(),
+            ));
+        }
+        tx.execute(
+            "UPDATE research_sessions SET objective=?2 WHERE entity_id=?1",
+            params![entity_id, update.objective],
+        )?;
+        upsert_search_document(
+            &tx,
+            &self.manifest.project_id,
+            entity_id,
+            "research_session",
+            &update.title,
+            &update.objective,
+            &now,
+        )?;
+        let payload = json!({"entity_id":entity_id,"previous_version":update.expected_version});
+        let sequence = append_event_with_context(
+            &tx,
+            &self.manifest.project_id,
+            command,
+            Some(entity_id),
+            "research.session.updated",
+            &payload,
+        )?;
+        insert_timeline(
+            &tx,
+            &self.manifest.project_id,
+            sequence,
+            Some(entity_id),
+            Some(entity_id),
+            "research.session.updated",
+            &payload,
+            &command.actor.id,
+            &now,
+        )?;
+        record_command_with_context(
+            &tx,
+            command,
+            &self.manifest.project_id,
+            "UpdateResearchSession",
+            Some(entity_id),
+            Some(update.expected_version),
+            &payload,
+        )?;
+        tx.commit()?;
+        self.get_research_item(entity_id)
     }
 
     pub fn create_research_question(
@@ -716,16 +829,51 @@ impl ContinuityStore {
         entity_id: &str,
         update: EvidenceAnnotationUpdate,
     ) -> Result<ResearchItem> {
+        let title = self.get_entity(entity_id)?.title;
+        self.update_evidence_fields(
+            command,
+            entity_id,
+            EvidenceDetailsUpdate {
+                title,
+                annotation: update.annotation,
+                summary: update.summary,
+                relevance: update.relevance,
+                expected_version: update.expected_version,
+            },
+            "UpdateEvidenceAnnotation",
+            "research.evidence.annotation_updated",
+        )
+    }
+
+    pub fn update_evidence_details(
+        &self,
+        command: &CommandContext,
+        entity_id: &str,
+        update: EvidenceDetailsUpdate,
+    ) -> Result<ResearchItem> {
+        self.update_evidence_fields(
+            command,
+            entity_id,
+            update,
+            "UpdateEvidenceDetails",
+            "research.evidence.details_updated",
+        )
+    }
+
+    fn update_evidence_fields(
+        &self,
+        command: &CommandContext,
+        entity_id: &str,
+        update: EvidenceDetailsUpdate,
+        operation: &str,
+        event_type: &str,
+    ) -> Result<ResearchItem> {
         validate_command_context(command)?;
+        validate_nonempty(&update.title, 500, "evidence title")?;
         let mut connection = self.connection()?;
         let tx = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         require_research_enabled(&tx, &self.manifest.project_id)?;
-        if let Some(result) = prior_result(
-            &tx,
-            &self.manifest.project_id,
-            command,
-            "UpdateEvidenceAnnotation",
-        )? {
+        if let Some(result) = prior_result(&tx, &self.manifest.project_id, command, operation)? {
             tx.commit()?;
             return self.get_research_item(&result.unwrap_or_else(|| entity_id.to_owned()));
         }
@@ -740,8 +888,8 @@ impl ContinuityStore {
             [entity_id],|row| Ok((row.get::<_,String>(0)?,row.get::<_,Option<String>>(1)?,row.get::<_,Option<String>>(2)?)))?;
         let now = Utc::now().to_rfc3339();
         let changed=tx.execute(
-            "UPDATE entities SET version=version+1,updated_at=?3,updated_by=?4 WHERE id=?1 AND project_id=?2 AND version=?5",
-            params![entity_id,self.manifest.project_id,now,command.actor.id,update.expected_version])?;
+            "UPDATE entities SET title=?3,version=version+1,updated_at=?4,updated_by=?5 WHERE id=?1 AND project_id=?2 AND version=?6",
+            params![entity_id,self.manifest.project_id,update.title,now,command.actor.id,update.expected_version])?;
         if changed != 1 {
             return Err(CoreError::Conflict(
                 "Evidence version is stale or missing".into(),
@@ -762,7 +910,7 @@ impl ContinuityStore {
             &self.manifest.project_id,
             entity_id,
             "evidence",
-            &current.0,
+            &update.title,
             &body,
             &now,
         )?;
@@ -771,8 +919,8 @@ impl ContinuityStore {
             &self.manifest.project_id,
             command,
             Some(entity_id),
-            "research.evidence.annotation_updated",
-            &json!({"entity_id":entity_id,"original_source_unchanged":true}),
+            event_type,
+            &json!({"entity_id":entity_id,"title":update.title,"original_source_unchanged":true}),
         )?;
         insert_timeline(
             &tx,
@@ -780,7 +928,7 @@ impl ContinuityStore {
             sequence,
             None,
             Some(entity_id),
-            "research.evidence.annotation_updated",
+            event_type,
             &json!({"entity_id":entity_id}),
             &command.actor.id,
             &now,
@@ -789,7 +937,7 @@ impl ContinuityStore {
             &tx,
             command,
             &self.manifest.project_id,
-            "UpdateEvidenceAnnotation",
+            operation,
             Some(entity_id),
             Some(update.expected_version),
             &json!({"entity_id":entity_id}),

@@ -1,0 +1,14 @@
+{
+  "build": {
+    "beforeBuildCommand": "node scripts/prepare-windows.mjs"
+  },
+  "bundle": {
+    "targets": "nsis",
+    "resources": {
+      "../../../target/release/continuum-mcp": null,
+      "../../../packaging/gstreamer-1.0": null,
+      "../../../target/x86_64-pc-windows-msvc/release/continuum-mcp.exe": "continuum-mcp.exe"
+    },
+    "icon": ["icons/icon.ico"]
+  }
+}

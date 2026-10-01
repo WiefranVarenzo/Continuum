@@ -1,6 +1,6 @@
 # Continuum Provider-Neutral AI Architecture
 
-> **Status:** Approved CP1 architecture amendment; implementation belongs to CP7
+> **Status:** Implemented and validated through CP7 on 2026-09-08; live profile facts require onboarding revalidation
 > **Decision:** [ADR-006 — Provider-Neutral AI and MCP Boundaries](../adr/ADR-006-PROVIDER-NEUTRAL-AI-AND-MCP-BOUNDARIES.md)
 > **Providers:** Pluggable adapters; Gemini remains first-class but is not a canonical dependency.
 
@@ -76,6 +76,8 @@ Allowed semantic tasks:
 - report narrative draft;
 - diagram plan generation;
 - suggested provenance links.
+
+Under ADR-007, report and diagram tasks return only versioned, allowlisted proposal schemas. Provider output cannot supply executable HTML, CSS, JavaScript, event handlers, URLs, Mermaid directives, renderer configuration, or canonical citations. Deterministic application code validates source IDs, composes the Human Document Model, escapes untrusted labels, selects components, and renders the final HTML/diagram.
 
 Prohibited authority includes automatic Decision acceptance, permission changes, secret-policy override, repository modification, test-result fabrication, deletion, and autonomous external write execution.
 
@@ -169,7 +171,7 @@ If a provider changes behavior, its profile is disabled or degraded without disa
 
 ## 12. Embeddings
 
-Embeddings remain deferred to CP10. MVP retrieval begins with deterministic metadata, FTS, graph, time, and repository filters. If embeddings are adopted, they are optional, derived, versioned, privacy-gated, rebuildable, and disabled for denied content. Local versus remote embedding and cross-provider comparability require a CP10 ADR after benchmarks.
+CP10 validated deterministic metadata, graph, status, time, repository, and bounded task-term retrieval at p95 approximately 78.62 ms for its 750-record reference fixture, so embeddings remain disabled. If embeddings are adopted later, they must be optional, derived, versioned, privacy-gated, rebuildable, and disabled for denied content. Local versus remote embedding, cross-provider comparability, and index lifecycle require a new ADR and benchmark; they are not prerequisites for CP11.
 
 ## 13. CP7 Delivery Baseline
 

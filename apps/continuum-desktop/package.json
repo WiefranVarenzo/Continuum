@@ -1,0 +1,39 @@
+{
+  "name": "@continuum/desktop-ui",
+  "private": true,
+  "version": "0.12.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json && vite build",
+    "build:windows": "tauri build --bundles nsis --target x86_64-pc-windows-msvc",
+    "build:windows:cross": "tauri build --bundles nsis --runner cargo-xwin --target x86_64-pc-windows-msvc",
+    "tauri": "tauri",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.11.1",
+    "@tauri-apps/plugin-clipboard-manager": "2.3.3",
+    "@tauri-apps/plugin-dialog": "2.7.0",
+    "@xyflow/react": "12.11.6",
+    "elkjs": "0.12.0",
+    "dompurify": "3.4.15",
+    "marked": "16.4.2",
+    "mermaid": "11.17.2",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.4",
+    "@testing-library/jest-dom": "7.0.1",
+    "@testing-library/react": "16.3.3",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.7",
+    "@vitejs/plugin-react": "6.1.1",
+    "jsdom": "30.0.1",
+    "typescript": "7.0.2",
+    "vite": "8.2.2",
+    "vitest": "5.0.0"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Continuum",
+  "version": "0.12.0",
+  "identifier": "com.wiefran.continuum",
+  "build": {
+    "beforeDevCommand": "npm run dev -- --port 1420",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "cargo build --manifest-path ../../Cargo.toml --release -p continuum-mcp --bin continuum-mcp && ../../packaging/prepare-gstreamer-plugins.sh && npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Continuum",
+        "width": 1240,
+        "height": 820,
+        "minWidth": 760,
+        "minHeight": 560,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' ipc: http://ipc.localhost; connect-src ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "resources": {
+      "../../../target/release/continuum-mcp": "continuum-mcp",
+      "../../../packaging/gstreamer-1.0": "gstreamer-1.0"
+    },
+    "category": "Productivity",
+    "shortDescription": "Local-first continuity workspace for research and development.",
+    "longDescription": "Continuum preserves research evidence, development history, provenance, checkpoints, reports, and bounded AI handovers in one local-first desktop application.",
+    "icon": ["icons/icon.png", "icons/icon.svg"]
+  }
+}

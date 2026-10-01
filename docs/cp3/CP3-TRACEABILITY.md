@@ -46,6 +46,7 @@
 - no synthetic provenance → relationship matrix and standalone fixtures;
 - canonical links registered at Core entry points → generic bypass rejection;
 - bounded resources → page, source-list, text/JSON, checkpoint, report, and benchmark limits;
+- ADR-007 compatibility → the deterministic cited Markdown report remains the CP3 content baseline; CP8 owns Human Document composition, safe HTML rendering/export, diagrams, accessibility, and renderer parity.
 - repairability → Research-aware integrity diagnostic fixture.
 
 ## Verification Files
