@@ -2,6 +2,22 @@
 
 Continuum adalah aplikasi desktop *local-first* untuk riset dan pengembangan. Satu proyek menyimpan tujuan riset, bukti (gambar, rekaman, audio, berkas, dan sumber web), posisi kartu dan hubungan di workspace, catatan keputusan, riwayat pengembangan, percakapan AI, checkpoint/memory, dan laporan Markdown. AI membantu menganalisis dan mengusulkan perubahan; manusia tetap meninjau usulan sebelum menjadi pengetahuan terverifikasi.
 
+## Unduh aplikasi — Linux x86-64
+
+**[⬇ Unduh AppImage Continuum terbaru yang telah diuji (0.12.0 · 1 Oktober 2026)](https://github.com/WiefranVarenzo/Continuum/releases/download/v0.12.0-linux-pilot-2026-10-01/Continuum_0.12.0_amd64.AppImage)**
+
+Repository ini privat: masuk ke akun GitHub yang diberi akses sebelum mengunduh. Tautan di atas langsung menuju berkas aplikasi, **bukan** source code. Versi ini adalah *pre-release* Linux yang belum ditandatangani; lihat [semua rilis](https://github.com/WiefranVarenzo/Continuum/releases) untuk memeriksa apakah ada versi lebih baru. Windows dan macOS belum tersedia sebagai rilis yang tervalidasi.
+
+Jika berkas disimpan di `~/Downloads`, jalankan di terminal (sesuaikan path bila folder unduhanmu berbeda):
+
+```bash
+cd ~/Downloads
+chmod +x Continuum_0.12.0_amd64.AppImage
+./Continuum_0.12.0_amd64.AppImage
+```
+
+Untuk memastikan unduhan utuh, jalankan `sha256sum Continuum_0.12.0_amd64.AppImage` dan cocokkan hasilnya dengan `125ec2364eddcf6bdd3d8e136298e359a3d5cc2d0a8dd78a6bd3962f49007523` ([catatan rilis dan checksum](releases/0.12.0-github-upload-responsive-2026-10-01/README.md)). Tidak perlu meng-clone repository atau membangun source hanya untuk memakai AppImage.
+
 **Mulai di sini:** [panduan pengguna](docs/cp12/CP12-USER-GUIDE.md) · [handover teknis untuk manusia/AI](docs/HANDOVER.md) · [panduan update dan perbaikan](docs/MAINTAINER-GUIDE.md) · [petunjuk agen](AGENTS.md) · [batasan platform](docs/cp12/CP12-PLATFORM-AND-KNOWN-LIMITATIONS.md).
 
 ## Cara memakai aplikasi
@@ -43,16 +59,9 @@ cargo test --workspace
 
 The Rust core is located at `crates/continuum-core`, the MCP server at `crates/continuum-mcp`, and the desktop application at `apps/continuum-desktop`. CP12 adds create/open/restore onboarding, direct Research Question and Git/code-intelligence entry actions, diagnostics, backup/export/restore, semantic-color diagrams, and Linux packages. Validation evidence lives in `docs/cp2/` through `docs/cp12/`.
 
-## Linux Pilot
+## Status Linux Pilot
 
-Unduh AppImage terbaru dari halaman GitHub Releases (jika sudah diterbitkan). Paket pilot Linux terbaru yang tersedia secara lokal saat handover ini dibuat adalah `0.12.0-github-upload-responsive-2026-10-01`:
-
-```bash
-chmod +x releases/0.12.0-github-upload-responsive-2026-10-01/Continuum_0.12.0_amd64.AppImage
-releases/0.12.0-github-upload-responsive-2026-10-01/Continuum_0.12.0_amd64.AppImage
-```
-
-See [CP12 User Guide](docs/cp12/CP12-USER-GUIDE.md), [Validation](docs/cp12/CP12-VALIDATION.md), and [Platform/limitations](docs/cp12/CP12-PLATFORM-AND-KNOWN-LIMITATIONS.md). The local Linux artifact is an unsigned pilot build; cross-platform signed GA is not yet claimed.
+Gunakan [tautan AppImage langsung](https://github.com/WiefranVarenzo/Continuum/releases/download/v0.12.0-linux-pilot-2026-10-01/Continuum_0.12.0_amd64.AppImage). Lihat juga [panduan pengguna](docs/cp12/CP12-USER-GUIDE.md), [validasi](docs/cp12/CP12-VALIDATION.md), dan [batasan platform](docs/cp12/CP12-PLATFORM-AND-KNOWN-LIMITATIONS.md). AppImage adalah pilot Linux tanpa tanda tangan digital; rilis umum lintas platform belum diklaim.
 
 The provider-neutral amendment is recorded in [ADR-006](docs/adr/ADR-006-PROVIDER-NEUTRAL-AI-AND-MCP-BOUNDARIES.md). Its detailed contracts are [AI Architecture](docs/ai/AI-ARCHITECTURE.md), [MCP Continuity Interface](docs/ai/MCP-CONTINUITY-INTERFACE.md), and [Provider and MCP Delivery Plan](docs/ai/PROVIDER-AND-MCP-DELIVERY-PLAN.md).
 
