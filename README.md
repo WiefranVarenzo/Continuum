@@ -44,6 +44,50 @@ Rilis AppImage Linux di atas beserta hash dan riwayatnya dipertahankan. Windows 
 | Arsitektur | [Diagram dan matriks lintas platform](docs/architecture/CROSS-PLATFORM-ARCHITECTURE.md) |
 | Kontribusi dan rilis | [CONTRIBUTING](CONTRIBUTING.md) · [Publikasi paket](docs/releases/PUBLISHING.md) |
 
+## Preview aplikasi
+
+Kesembilan gambar berikut berasal dari penggunaan Continuum di Linux pada proyek contoh milik pengguna. Ini menunjukkan tampilan aplikasi, bukan data bawaan yang akan muncul pada proyek baru. Beberapa teks dan hasil AI adalah contoh yang tetap perlu ditinjau manusia.
+
+### Workspace dan hubungan antar-bukti
+
+Workspace menampilkan kartu riset, gambar, rekaman, pertanyaan, dan garis hubungan yang dapat diatur.
+
+![Workspace Continuum dengan kartu evidence dan hubungan antar-kartu](docs/images/preview/codex-clipboard-504e0cdb-2c72-4cee-832b-5d657fe21a1e.png)
+
+Kartu gambar menyimpan catatan pengguna dan interpretasi AI sebagai draf yang terpisah.
+
+![Kartu gambar evidence dengan catatan dan draf interpretasi AI](docs/images/preview/codex-clipboard-6f2033fc-0705-4f8c-a4e8-7b7d52c89d17.png)
+
+### Bukti dan rekaman layar
+
+Saat bukti dibuka, pengguna dapat memberi judul serta deskripsi untuk konteks AI dan laporan.
+
+![Dialog Edit evidence dengan preview video, judul, dan deskripsi](docs/images/preview/codex-clipboard-bc827967-b644-4523-95b4-bc5f6eba1f6d.png)
+
+Rekaman dapat dilihat dan diputar langsung dari kartu workspace.
+
+![Kartu rekaman layar di workspace saat video diputar](docs/images/preview/codex-clipboard-52316948-517d-4750-80fb-fe719bd80022.png)
+
+![Kartu rekaman layar di workspace sebelum video diputar](docs/images/preview/codex-clipboard-b208ae51-2498-4579-a3f4-72c3cdffa7ca.png)
+
+### Alur pengembangan
+
+Bagian Development menghubungkan folder Git lokal sebagai sumber analisis *read-only* dan memunculkannya di workspace.
+
+![Halaman Development untuk memilih folder repository Git lokal](docs/images/preview/codex-clipboard-472cb784-bb2c-4e1e-9aa3-87f1632e0d3d.png)
+
+![Kartu repository Development di workspace Continuum](docs/images/preview/codex-clipboard-1ebbd0ad-a2ed-4e6e-9c08-faa654bf7fec.png)
+
+### AI dan percakapan
+
+Halaman AI connections membedakan klien yang terdeteksi dari koneksi yang benar-benar pernah berhasil memanggil tool.
+
+![Halaman AI connections dengan status koneksi Codex terverifikasi](docs/images/preview/codex-clipboard-352d1bcb-8e20-4df0-bdf8-171755f5bf12.png)
+
+Messages menggunakan konteks tersimpan untuk menjawab pertanyaan dengan rujukan bukti; jawaban tetap perlu diperiksa.
+
+![Percakapan Messages yang menampilkan jawaban Codex dan rujukan evidence](docs/images/preview/codex-clipboard-b7c67a76-0f26-43bb-849d-6a7f45a262f2.png)
+
 ## Cara memakai aplikasi
 
 1. Di **Home**, buat proyek Research, Development, atau Connected R&D. Pilih folder lokal di luar repository source ini untuk data proyek.
